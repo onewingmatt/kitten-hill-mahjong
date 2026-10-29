@@ -517,9 +517,18 @@ export function Game() {
                     aria-label={
                       groupKept
                         ? 'Unmark these tiles'
-                        : `Mark ${focusLine ?? 'this tile'} safe from being thrown`
+                        : `Mark ${focusLine ?? 'this tile'} safe from being thrown${
+                            /* keeping is by tile KIND, so a second copy elsewhere in
+                               the hand is protected too — the rack shows it, a screen
+                               reader needs it said */
+                            (focusBlock?.tiles ?? []).some(
+                              (k2) => display.filter((h) => h === k2).length > 1,
+                            )
+                              ? ' — every copy of those tiles'
+                              : ''
+                          }`
                     }
-                    title={groupKept ? 'Unmark — allow discarding' : 'Mark safe — cannot be discarded'}
+                    title={groupKept ? 'Unmark — allow discarding' : 'Mark safe — cannot be discarded (all copies)'}
                   >
                     {focusBlock ? (
                       focusBlock.tiles.slice(0, 4).map((k2, n) => <img key={n} className="wait-tile" src={spriteUrl(k2)} alt="" />)
@@ -624,9 +633,11 @@ function Hud({
         <span className="hud__title">Kitten Hill</span>
         <span className="hud__sub">mahjong · 麻雀</span>
       </div>
+      {/* "Hand 1 to 2" read as an action ("advance to hand 2") and as a range of
+          hands. The match is first-to-N, so say that. */}
       <span className="chip">
         <b>Hand {handNo}</b>
-        <span style={{ opacity: 0.5 }}>to {target}</span>
+        <span className="hud__to">· first to {target}</span>
       </span>
       <span className="chip chip--ghost">{WIND_GLYPH[wind]} round</span>
       <button className="icon-btn" aria-label={muted ? 'Unmute' : 'Mute'} onClick={onMute}>

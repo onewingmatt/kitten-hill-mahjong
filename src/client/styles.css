@@ -3286,10 +3286,6 @@ input, textarea, select { font-family: inherit; font-size: inherit; }
    the pattern row was sliced by the save bar and read as clipped. A bottom
    fade is the scroll cue, and it costs no layout. */
 .creator__scroll {
-  /* the ramp starts above the container's 12px bottom padding, or half the
-     fade lands on empty space and the last row still reads as hard-clipped */
-  -webkit-mask-image: linear-gradient(180deg, #000 0, #000 calc(100% - 42px), rgb(0 0 0 / 0.45) calc(100% - 16px), transparent 100%);
-  mask-image: linear-gradient(180deg, #000 0, #000 calc(100% - 42px), rgb(0 0 0 / 0.45) calc(100% - 16px), transparent 100%);
 }
 
 /* the instruction is the point of this line: it must not wrap the row taller
@@ -3306,3 +3302,102 @@ input, textarea, select { font-family: inherit; font-size: inherit; }
    the instruction shrinks (with an ellipsis) only when a Kong or a Declare-win
    button is competing for the same row */
 .shape-tiles { flex: 0 0 auto; }
+
+/* ==========================================================================
+   HUD: status is status, actions are actions
+   ========================================================================== */
+
+/* The "Hand 1 · to 2" chip was a bordered, shadowed pill sitting between the
+   wordmark and the icon buttons — every cue said button, and it does nothing.
+   It is a status line now, and it sits with the wordmark instead of floating in
+   the middle of the bar (the 68-98px gap was the hidden round chip's slot). */
+.hud__mark { margin-right: 0; }
+.hud .chip {
+  margin-right: auto;
+  height: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgb(248 240 225 / 0.72);
+}
+.hud .chip b { color: var(--gold); font-weight: 800; }
+
+/* ==========================================================================
+   Creator: a map for a 2.6-screen list
+   ========================================================================== */
+
+/* Four tabs that scroll to their card and light up as you scroll past it. Only
+   the reach is new: 34px tall so it clears the tap floor, with the usual
+   ::before expansion to 44 in the 12px gap above and below. */
+.creator__jump {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 6px;
+}
+.creator__jumpbtn {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+  height: 34px;
+  border-radius: 10px;
+  border: 1px solid rgb(255 255 255 / 0.1);
+  background: rgb(255 255 255 / 0.04);
+  color: rgb(248 240 225 / 0.8);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+.creator__jumpbtn::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -5px;
+  bottom: -5px;
+}
+.creator__jumpbtn.is-on {
+  color: var(--gold);
+  border-color: rgb(232 191 116 / 0.55);
+  background: rgb(232 191 116 / 0.16);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.06);
+}
+
+/* the sliders were a 34px drag target under a 4px track: grow the input, not the
+   track, so the row keeps its look and the finger gets 44px */
+.slider input[type="range"] { height: 44px; }
+
+/* paying for the tab row on a 667-tall phone out of the preview, which was 158px
+   of cat for a screen that has 262px of options to scroll */
+@media (max-height: 700px) {
+  .creator__stage svg.catface { width: 124px; height: 124px; }
+}
+
+.hud .chip .hud__to { color: rgb(248 240 225 / 0.82); }
+
+/* The container mask and the footer's top gradient were fading the same 28px,
+   so the last row left the viewport as a ghost sliver — read as a rendering
+   fault rather than "more below". One fade (the footer's, which is anchored to
+   the button and works at any scroll offset) plus slack at the end of the list
+   so the last card can scroll fully clear of it. */
+.creator__scroll { padding-bottom: 18px; }
+.creator__footer::before { height: 22px; }
+
+/* A light swatch and a selected swatch both read as "outlined" at 38px: the
+   gold ring is the same weight as the light fill's own edge. Lifting the
+   selected one out of the grid is a size difference, which no fill colour
+   can argue with. */
+.swatch.is-on {
+  z-index: 1;
+  transform: scale(1.14);
+  box-shadow:
+    inset 0 0 0 1px rgb(0 0 0 / 0.35),
+    0 0 0 2px var(--gold),
+    0 3px 10px rgb(0 0 0 / 0.45);
+}

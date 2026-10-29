@@ -18,6 +18,7 @@ import {
 import { personalityFromStats } from '../stats';
 import { useStore } from '../store';
 import { sfx } from '../audio';
+import { useDialog } from '../useDialog';
 
 const CAT_NAMES = [
   'Biscuit', 'Marmalade', 'Toast', 'Pebble', 'Nori', 'Clementine', 'Miso', 'Hazel',
@@ -32,6 +33,56 @@ export function Creator() {
   const [nameTouched, setNameTouched] = React.useState(false);
   /** remembered so the collar toggle can put the colour back */
   const [lastCollar, setLastCollar] = React.useState<string>(profile?.cat?.collar ?? COLLARS[0] ?? '#2f8f7f');
+
+  /* The option list is 2.6 screens tall (4.4 on a 667 phone) with nothing that
+     says what it contains or how far in you are. A four-tab index that scrolls
+     to its card answers both, and it is the only way to reach Collar without
+     dragging past two full screens. */
+  const scrollRef = React.useRef<HTMLDivElement | null>(null);
+  const cards = React.useRef<Array<HTMLDivElement | null>>([]);
+  const [section, setSection] = React.useState(0);
+  const SECTIONS = ['Coat', 'Eyes', 'Build', 'Collar'] as const;
+
+  const jumpTo = (i: number) => {
+    const sc = scrollRef.current;
+    const card = cards.current[i];
+    if (!sc || !card) return;
+    const top = card.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop - 4;
+    const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    sc.scrollTo({ top, behavior: reduced ? 'auto' : 'smooth' });
+    setSection(i);
+  };
+
+  const trackSection = () => {
+    const sc = scrollRef.current;
+    if (!sc) return;
+    // the card whose top has passed the top of the window is the one you are in
+    const probe = sc.getBoundingClientRect().top + 24;
+    // the last card cannot always reach the top (it is shorter than the window),
+    // so at the bottom of the list the last section is the one you are looking at
+    if (sc.scrollTop + sc.clientHeight >= sc.scrollHeight - 4) {
+      setSection(cards.current.length - 1);
+      return;
+    }
+    let idx = 0;
+    cards.current.forEach((c, i) => {
+      if (c && c.getBoundingClientRect().top <= probe) idx = i;
+    });
+    setSection(idx);
+  };
+
+  /* Back used to drop every edit with no word about it. The cat itself is
+     untouched, so this is recoverable — but "recoverable" is not the same as
+     "expected", and there is no undo once you are on the menu. */
+  const opening = React.useRef<{ cat: CatAppearance; name: string } | null>(null);
+  if (!opening.current) opening.current = { cat, name };
+  const [askDiscard, setAskDiscard] = React.useState(false);
+  const dirty =
+    name !== opening.current.name || JSON.stringify(cat) !== JSON.stringify(opening.current.cat);
+  const leaveCreator = () => {
+    if (dirty) setAskDiscard(true);
+    else go('menu');
+  };
 
   const patch = (p: Partial<CatAppearance>) => {
     sfx.ui();
@@ -69,7 +120,7 @@ export function Creator() {
   return (
     <div className="screen screen--creator">
       <div className="row row--between creator__head">
-        <button className="btn btn--ghost btn--sm" onClick={() => go('menu')}>‹ Back</button>
+        <button className="btn btn--ghost btn--sm" onClick={leaveCreator}>‹ Back</button>
         <span className="hud__sub">Your cat</span>
         <button className="btn btn--ghost btn--sm" onClick={randomise}>Surprise me</button>
       </div>
@@ -92,8 +143,21 @@ export function Creator() {
         />
       </label>
 
-      <div className="grow creator__scroll">
-        <div className="card creator">
+      <div className="creator__jump" role="group" aria-label="Jump to a section">
+        {SECTIONS.map((label, i) => (
+          <button
+            key={label}
+            className={`creator__jumpbtn ${section === i ? 'is-on' : ''}`}
+            aria-current={section === i ? 'true' : undefined}
+            onClick={() => jumpTo(i)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      <div className="grow creator__scroll" ref={scrollRef} onScroll={trackSection}>
+        <div className="card creator" ref={el => { cards.current[0] = el; }}>
           <h2>Coat</h2>
           <div className="swatches">
             {FUR_COLORS.map((c) => (
@@ -160,7 +224,7 @@ export function Creator() {
           )}
         </div>
 
-        <div className="card creator">
+        <div className="card creator" ref={el => { cards.current[1] = el; }}>
           <h2>Eyes</h2>
           <div className="swatches">
             {EYE_COLORS.map((c) => (
@@ -191,7 +255,7 @@ export function Creator() {
           </div>
         </div>
 
-        <div className="card creator">
+        <div className="card creator" ref={el => { cards.current[2] = el; }}>
           <h2>Build</h2>
           <Slider
             label="Size"
@@ -219,7 +283,7 @@ export function Creator() {
           />
         </div>
 
-        <div className="card creator">
+        <div className="card creator" ref={el => { cards.current[3] = el; }}>
           <div className="row row--between">
             <h2>Collar</h2>
             <div className="segmented" role="group" aria-label="Collar">
@@ -283,6 +347,8 @@ export function Creator() {
         <div style={{ height: 4 }} />
       </div>
 
+      {askDiscard && <DiscardDialog onKeep={() => setAskDiscard(false)} onDiscard={() => go('menu')} />}
+
       <div className="creator__footer">
         <button className="btn btn--primary creator__save" onClick={save}>
           Save cat
@@ -322,6 +388,34 @@ function Slider({
         aria-label={label}
         onChange={(e) => onChange(Number(e.target.value))}
       />
+    </div>
+  );
+}
+
+/* Its own component on purpose: useDialog() reads the dialog node once, when it
+   mounts. Called from the screen (where the node does not exist yet) it bails on
+   `if (!node) return` and never binds Escape or the focus trap. */
+function DiscardDialog({ onKeep, onDiscard }: { onKeep: () => void; onDiscard: () => void }) {
+  const ref = useDialog(onKeep);
+  return (
+    <div
+      className="modal-scrim"
+      onPointerDown={(e) => {
+        if (e.target === e.currentTarget) onKeep();
+      }}
+    >
+      <div className="card leave" ref={ref} role="dialog" aria-modal="true" aria-label="Discard changes?">
+        <h2 className="card-label">Discard changes</h2>
+        <p className="leave__body">This cat is not saved. Your previous cat stays as it was.</p>
+        <div className="row leave__cta">
+          <button className="btn btn--primary grow" style={{ height: 44 }} onClick={onKeep}>
+            Keep editing
+          </button>
+          <button className="btn btn--danger" style={{ height: 44 }} onClick={onDiscard}>
+            Discard
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
