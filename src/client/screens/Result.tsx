@@ -57,6 +57,11 @@ export function ResultOverlay() {
       : "The wall runs dry";
 
   const subject = win ? win.seat : -1;
+  // medals rank the table, so a draw where nobody scored must not hand out
+  // gold/silver/bronze next to four identical zeroes
+  const tiedTable = standings.every(
+    (s) => s.score === standings[0].score && s.wins === standings[0].wins,
+  );
   const dialog = useDialog(closeResult);
 
   return (
@@ -93,7 +98,14 @@ export function ResultOverlay() {
                 )}
               </>
             ) : (
-              <span style={{ fontSize: 40, opacity: 0.35 }}>·</span>
+              // a drawn hand has no winner's cat, and this slot used to hold a
+              // 40px middot at 0.35 opacity — a lone grey dot in the middle of
+              // the banner. Three face-down tiles say "the wall ran out".
+              <span className="result__nowin" aria-hidden="true">
+                <i />
+                <i />
+                <i />
+              </span>
             )}
           </div>
           <h2 className="result__title" style={{ fontSize: 24 }}>
@@ -176,7 +188,7 @@ export function ResultOverlay() {
                 key={s.seat}
                 className={`standing seat--${s.seat} ${s.seat === subject ? "is-winner" : ""}`}
               >
-                <span className={`medal ${i < 3 ? `medal--${i + 1}` : ""}`}>
+                <span className={`medal ${!tiedTable && i < 3 ? `medal--${i + 1}` : ""}`}>
                   {i + 1}
                 </span>
                 <div className="standing__badge">

@@ -113,10 +113,6 @@ export function Menu() {
             </button>
           ))}
         </div>
-        <p style={{ margin: '10px 0 0', fontSize: 11.5, lineHeight: 1.55, color: 'rgba(248,240,225,.6)' }}>
-          Chinese Classical. 144 tiles, 13 in hand, flowers set aside for bonus points. Three cats join
-          you, each with its own appetite for risk.
-        </p>
       </div>
 
       <button
@@ -208,8 +204,9 @@ export function Menu() {
         <div className="hint">
           <span style={{ fontFamily: 'var(--font-display)', fontSize: 15, color: 'var(--gold)' }}>東</span>
           <span>
-            Four sets and a pair. Any completed hand wins — doubles like a flush, a dragon pung or your
-            own wind multiply the payout, and the counter under your hand tracks what it's worth.
+            Four sets and a pair. Chinese Classical: 144 tiles, 13 in hand, flowers set aside for bonus
+            points. Any completed hand wins — doubles like a flush, a dragon pung or your own wind
+            multiply the payout, and the counter under your hand tracks what it's worth.
           </span>
         </div>
       </div>

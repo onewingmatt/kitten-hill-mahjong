@@ -313,8 +313,10 @@ export function Game() {
               <i className="wall__seg wall__seg--w" />
               <span className="wall__core" />
             </div>
-            <div className="wall__count">{game.wall.length}</div>
-            <div className="wall__label">left</div>
+            <div className="wall__count">
+              {game.wall.length}
+              <small>left</small>
+            </div>
           </div>
 
           {[0, 1, 2, 3].map((seat) => (
@@ -646,7 +648,7 @@ function OpponentCard({
       {callout && <span className="callout">{callout}</span>}
 
       <span className="opp__open" aria-hidden="true">
-        <IconExpand size={11} />
+        <IconExpand size={14} />
       </span>
 
       <div className="opp__head">
