@@ -11,7 +11,7 @@ interface TileProps {
   drawn?: boolean;
   staticSize?: boolean;
   dim?: boolean;
-  onClick?: () => void;
+  onClick?: (e: React.MouseEvent<HTMLElement>) => void;
   onPointerDown?: (e: React.PointerEvent<HTMLElement>) => void;
   title?: string;
 }

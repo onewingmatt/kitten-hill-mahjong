@@ -103,9 +103,10 @@ img {
 
 button { font-family: inherit; color: inherit; border: 0; background: none; cursor: pointer; }
 
-/* buttons inherit the UI face; inputs do not by default — the creator's name
-   field was rendering in UA Arial 13.33px, the only text on the screen that was
-   not the app's own typeface (and under the 16px iOS zooms on focus). */
+/* Buttons inherit the UI face; inputs do not by default. The creator's name
+   field sets its own display serif on purpose, but the menu's CAT CODE / CAT'S
+   NAME fields set none — they fell back to UA Arial 13.33px, and anything under
+   16px also makes iOS zoom the page on focus. */
 input, textarea, select { font-family: inherit; font-size: inherit; }
 
 /* ---- app shell ---------------------------------------------------------- */
@@ -3207,3 +3208,101 @@ input, textarea, select { font-family: inherit; font-size: inherit; }
 /* one glyph, one shape: a seat's wind is a coloured circle in the seat card and
    was a rounded square on the felt, which read as two different marks */
 .river__tag { border-radius: 50%; }
+
+/* ==========================================================================
+   Flow pass — the top bar, the rack's raise/lock step, the creator
+   ========================================================================== */
+
+/* Leaving mid-hand asks. The consequence is stated for the state you are in,
+   and the safe choice is the primary that useDialog focuses. */
+.leave {
+  max-width: 330px;
+  gap: 10px;
+  display: flex;
+  flex-direction: column;
+}
+.leave__body {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: rgb(248 240 225 / 0.78);
+}
+.leave__cta {
+  gap: 8px;
+  margin-top: 2px;
+}
+
+/* the padlock chip was a bare lock icon plus thumbnails: read cold it looked
+   like the "confirm the throw" button, when it means the opposite — these
+   tiles cannot be discarded. It carries its own word. */
+.shape-tiles__label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgb(248 240 225 / 0.72);
+  margin-left: 1px;
+}
+.shape-tiles.is-kept .shape-tiles__label { color: var(--gold); }
+
+/* The sort tabs are 32px tall and used several times a hand. Growing the box
+   would take height off the rack, so the TARGET grows instead: 32 + 12 = 44
+   with no layout change. Vertical only — four tabs side by side cannot afford
+   overlapping hit areas. */
+.segmented button { position: relative; }
+.segmented button::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -6px;
+  bottom: -6px;
+}
+
+/* Creator: the same trick for the three control families that are drawn smaller
+   than a fingertip — 34px swatches, 38px pills, 32px segmented. The expansion
+   stops at the grid gap so neighbouring rows never claim each other's taps. */
+.swatch { position: relative; }
+.swatch::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -4px;
+  bottom: -4px;
+}
+.pill { position: relative; }
+.pill::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -3px;
+  bottom: -3px;
+}
+
+/* The creator's option list is 1121px tall inside a 262px window on a 667
+   phone, so the first screen ends mid-card with no sign that it continues —
+   the pattern row was sliced by the save bar and read as clipped. A bottom
+   fade is the scroll cue, and it costs no layout. */
+.creator__scroll {
+  /* the ramp starts above the container's 12px bottom padding, or half the
+     fade lands on empty space and the last row still reads as hard-clipped */
+  -webkit-mask-image: linear-gradient(180deg, #000 0, #000 calc(100% - 42px), rgb(0 0 0 / 0.45) calc(100% - 16px), transparent 100%);
+  mask-image: linear-gradient(180deg, #000 0, #000 calc(100% - 42px), rgb(0 0 0 / 0.45) calc(100% - 16px), transparent 100%);
+}
+
+/* the instruction is the point of this line: it must not wrap the row taller
+   (that moves the rack) and it must not chop a word without saying so */
+.shape-line {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* the safe chip keeps its size so its thumbnails never spill past the border;
+   the instruction shrinks (with an ellipsis) only when a Kong or a Declare-win
+   button is competing for the same row */
+.shape-tiles { flex: 0 0 auto; }

@@ -13,6 +13,7 @@ import { Wash } from './screens/Wash';
 import { claimOptions, currentWaits } from '../engine/game';
 import { LogSheet } from './screens/LogSheet';
 import { sfx } from './audio';
+import { useDialog } from './useDialog';
 import { IconClose, IconExpand, IconLock, IconLog, IconMute, IconPause, IconPlay, IconSound, IconSparkle, IconTrophy } from './components/Icons';
 
 const WIND_GLYPH = ['東', '南', '西', '北'];
@@ -72,6 +73,10 @@ export function Game() {
   const [sheetSeat, setSheetSeat] = React.useState<number | null>(null);
   /* reading the log should never cost you a turn or a claim */
   const [logOpen, setLogOpen] = React.useState(false);
+  /* the X in the HUD used to drop the hand on the first tap, from the corner
+     where a thumb rests. Leaving mid-hand asks first; leaving a finished hand
+     does not, because there is nothing left to lose. */
+  const [leaveAsk, setLeaveAsk] = React.useState(false);
 
   /* ---- the wash plays over the top of each new deal ---- */
   const reducedMotion =
@@ -218,8 +223,14 @@ export function Game() {
   const dragRef = React.useRef<{ i: number; x: number; y: number; moved: boolean } | null>(null);
   const [drag, setDrag] = React.useState<{ i: number; dx: number; dy: number; moved: boolean } | null>(null);
 
+  /* a keyboard "click" is the only click that needs its own path: pointer taps
+     are handled on pointerup. Both signals are checked, because a browser that
+     reports detail 0 for a touch would otherwise discard on a single tap. */
+  const lastPointerAt = React.useRef(0);
+
   const onPointerDown = (e: React.PointerEvent, i: number) => {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
+    lastPointerAt.current = Date.now();
     dragRef.current = { i, x: e.clientX, y: e.clientY, moved: false };
     setDrag({ i, dx: 0, dy: 0, moved: false });
     (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
@@ -279,7 +290,7 @@ export function Game() {
         target={target}
         muted={muted}
         onMute={toggleMute}
-        onLeave={leave}
+        onLeave={() => (ended ? leave() : setLeaveAsk(true))}
         wind={myWind}
         wall={game.wall.length}
       />
@@ -454,6 +465,12 @@ export function Game() {
                 className={`tile--ranked ${dragging ? 'tile--dragging' : ''}${keep.includes(k) ? ' tile--kept' : ''}`}
                 dim={!myTurn}
                 onPointerDown={(e) => onPointerDown(e, i)}
+                /* a keyboard "click" has detail 0 and never fires pointerup, so
+                   it is the only path that needs handling here — without it the
+                   rack was announced as buttons that did nothing when pressed */
+                onClick={(e) => {
+                  if (e.detail === 0 && Date.now() - lastPointerAt.current > 500) selectTile(i);
+                }}
               />
             );
           })}
@@ -465,6 +482,9 @@ export function Game() {
               drawn
               raised={selected === drawn.i}
               onPointerDown={(e) => onPointerDown(e, drawn!.i)}
+              onClick={(e) => {
+                if (e.detail === 0 && Date.now() - lastPointerAt.current > 500) selectTile(drawn.i);
+              }}
             />
           )}
           {myTurn && !drawn && sorted.length === 0 && <span className="seat__meta">…</span>}
@@ -494,7 +514,11 @@ export function Game() {
                     className={`shape-tiles${groupKept ? ' is-kept' : ''}`}
                     onClick={() => toggleKeep(focusKinds)}
                     aria-pressed={groupKept}
-                    aria-label={groupKept ? 'Unmark these tiles' : 'Mark these tiles safe'}
+                    aria-label={
+                      groupKept
+                        ? 'Unmark these tiles'
+                        : `Mark ${focusLine ?? 'this tile'} safe from being thrown`
+                    }
                     title={groupKept ? 'Unmark — allow discarding' : 'Mark safe — cannot be discarded'}
                   >
                     {focusBlock ? (
@@ -503,14 +527,22 @@ export function Game() {
                       <img className="wait-tile" src={spriteUrl(focusKind!)} alt="" />
                     )}
                     <IconLock size={12} className="shape-tiles__lock" />
+                    <span className="shape-tiles__label">safe</span>
                   </button>
                 )}
+                {/* The shape line used to REPLACE the instruction: raise a tile and
+                    you were told "a pair", never that tapping again throws it. The
+                    line now carries the action and nothing else — the block's tiles
+                    are already in the chip beside it, and a 105px line cannot hold
+                    both without clipping the one word that matters. */}
                 <span className={`seat__meta shape-line${raisedKept ? ' is-kept' : ''}`}>
                   {selected === null
                     ? 'Tap a tile to raise it'
                     : raisedKept
-                      ? 'safe · tap again to unmark'
-                      : focusLine ?? 'tap again to discard'}
+                      /* keeps the word "safe" in the line — the chip says it too,
+                         but this is the sentence the player is reading */
+                      ? 'safe · tap to unmark'
+                      : 'tap again to throw'}
                 </span>
               </div>
             ) : waiting ? (
@@ -547,6 +579,18 @@ export function Game() {
           </button>
         </div>
       </div>
+
+      {leaveAsk && (
+        <LeaveDialog
+          online={mode === 'online'}
+          handNo={handNo}
+          onStay={() => setLeaveAsk(false)}
+          onLeave={() => {
+            setLeaveAsk(false);
+            leave();
+          }}
+        />
+      )}
 
       {washing && <Wash seats={seats} />}
       {coachSeen ? null : <Coach />}
@@ -597,6 +641,53 @@ function Hud({
 }
 
 type SeatPos = 'west' | 'north' | 'east';
+
+/**
+ * The way out of the table, asked properly.
+ *
+ * The HUD's X sits in the thumb corner and used to leave on the first tap: one
+ * stray press mid-hand threw the match away with no undo and no copy saying so.
+ * This states the consequence for the CURRENT state, puts the safe choice first
+ * and focuses it, and closes on Escape or a backdrop press.
+ */
+function LeaveDialog({
+  online,
+  handNo,
+  onStay,
+  onLeave,
+}: {
+  online: boolean;
+  handNo: number;
+  onStay: () => void;
+  onLeave: () => void;
+}) {
+  const dialog = useDialog(onStay);
+  return (
+    <div
+      className="modal-scrim"
+      onPointerDown={(e) => {
+        if (e.target === e.currentTarget) onStay();
+      }}
+    >
+      <div className="card leave" ref={dialog} role="dialog" aria-modal="true" aria-label="Leave the table?">
+        <h2 className="card-label">Leave the table</h2>
+        <p className="leave__body">
+          {online
+            ? 'Your seat is released and the other cats play on without you. You can rejoin only with the room code.'
+            : `Hand ${handNo} is still running. Your cat keeps its record, but this match is abandoned.`}
+        </p>
+        <div className="row leave__cta">
+          <button className="btn btn--primary grow" style={{ height: 44 }} onClick={onStay}>
+            Keep playing
+          </button>
+          <button className="btn btn--danger" style={{ height: 44 }} onClick={onLeave}>
+            Leave
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 /**
  * One opponent, one card — the three of them are identical by design. Placement is the only

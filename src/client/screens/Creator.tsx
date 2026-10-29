@@ -28,6 +28,8 @@ export function Creator() {
   const { profile, saveProfile, go, stats } = useStore();
   const [cat, setCat] = React.useState<CatAppearance>(profile?.cat ?? defaultCat(Math.floor(Math.random() * 999)));
   const [name, setName] = React.useState(profile?.name ?? CAT_NAMES[Math.floor(Math.random() * CAT_NAMES.length)]);
+  /** a name the player typed is theirs: "Surprise me" must not overwrite it */
+  const [nameTouched, setNameTouched] = React.useState(false);
   /** remembered so the collar toggle can put the colour back */
   const [lastCollar, setLastCollar] = React.useState<string>(profile?.cat?.collar ?? COLLARS[0] ?? '#2f8f7f');
 
@@ -53,7 +55,8 @@ export function Creator() {
       hair: pick(HAIRS).id,
       seed: Math.floor(Math.random() * 9999),
     });
-    setName(pick(CAT_NAMES));
+    // a generated name is a placeholder; a typed one is a decision
+    if (!nameTouched) setName(pick(CAT_NAMES));
   };
 
   const save = () => {
@@ -80,7 +83,10 @@ export function Creator() {
         <input
           value={name}
           maxLength={14}
-          onChange={(e) => setName(e.target.value)}
+          onChange={(e) => {
+            setName(e.target.value);
+            setNameTouched(true);
+          }}
           placeholder="Name your cat"
           aria-label="Cat name"
         />
