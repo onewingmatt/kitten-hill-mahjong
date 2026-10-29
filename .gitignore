@@ -1,0 +1,13 @@
+
+# dependencies
+node_modules/
+
+# build output — rebuilt by `vite build`; the service runs from dist/
+dist/
+
+# room persistence
+data/
+
+# scratch
+*.log
+.DS_Store
