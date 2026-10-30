@@ -7,6 +7,7 @@ import { CatAppearance, defaultCat } from './cat';
 import { SortMode, moveInOrder, reconcileOrder, sortHand } from './sort';
 import { sfx, setMuted as setAudioMuted, unlockAudio } from './audio';
 import { track } from './telemetry';
+import { SavedMatch, clearSavedMatch, loadSavedMatch, saveMatch } from './match';
 import {
   PlayStats,
   loadStats,
@@ -78,6 +79,10 @@ interface Store {
   /** The player dismissed the result card to look at the table; a snapshot must not reopen it. */
   resultDismissed: boolean;
   coachSeen: boolean;
+  /** A solo match left mid-play; the menu offers it back instead of the player losing it. */
+  savedMatch: SavedMatch | null;
+  /** The tutorial, re-opened from the menu rather than only on the first hand. */
+  coachOpen: boolean;
   rival: { name: string; personality: Personality; cat: CatAppearance; code: string } | null;
   lastWinSeat: number | null;
   tick: number;
@@ -117,6 +122,12 @@ interface Store {
   nextActor: () => number | null;
   setPaw: (p: PawPose) => void;
   dismissCoach: () => void;
+  openCoach: () => void;
+  closeCoach: () => void;
+  /** Pick up the saved solo match exactly where it stopped. */
+  resume: () => void;
+  /** Throw the saved match away. */
+  dropSaved: () => void;
   say: (text: string) => void;
   addRival: (code: string, name?: string) => boolean;
   clearRival: () => void;
@@ -243,6 +254,8 @@ export const useStore = create<Store>((set, get) => ({
   resultOpen: false,
   resultDismissed: false,
   coachSeen: true,
+  savedMatch: null,
+  coachOpen: false,
   rival: null,
   lastWinSeat: null,
   tick: 0,
@@ -257,7 +270,14 @@ export const useStore = create<Store>((set, get) => ({
     } catch {
       coachSeen = true;
     }
-    set({ profile: loadProfile(), stats: loadStats(), muted: prefs.muted, sortMode: prefs.sortMode, coachSeen });
+    set({
+      profile: loadProfile(),
+      stats: loadStats(),
+      muted: prefs.muted,
+      sortMode: prefs.sortMode,
+      coachSeen,
+      savedMatch: loadSavedMatch(),
+    });
   },
 
   addRival: (code, name) => {
@@ -279,6 +299,49 @@ export const useStore = create<Store>((set, get) => ({
     set({ coachSeen: true });
   },
 
+  openCoach: () => set({ coachOpen: true }),
+
+  closeCoach: () => {
+    // the first-run coach also spends the one-shot flag; a replay does not
+    if (!get().coachSeen) get().dismissCoach();
+    set({ coachOpen: false });
+  },
+
+  resume: () => {
+    const m = get().savedMatch;
+    if (!m) return;
+    unlockAudio();
+    track('match:resume', { handNo: m.handNo, phase: m.game.phase });
+    set({
+      mode: 'solo',
+      screen: 'table',
+      target: m.target,
+      handNo: m.handNo,
+      dealer: m.dealer,
+      scores: m.scores,
+      handWins: m.handWins,
+      seats: m.seats,
+      game: m.game,
+      mySeat: m.mySeat,
+      myOrder: m.myOrder,
+      keep: m.keep,
+      matchOver: m.matchOver,
+      lastWinSeat: m.lastWinSeat,
+      resultOpen: m.resultOpen,
+      resultDismissed: false,
+      selected: null,
+      userPaused: false,
+      // resuming into a half-played hand is not the moment for the walkthrough
+      coachSeen: true,
+      tick: get().tick + 1,
+    });
+  },
+
+  dropSaved: () => {
+    clearSavedMatch();
+    set({ savedMatch: null });
+  },
+
   go: (screen) => set({ screen }),
 
   saveProfile: (p) => {
@@ -295,6 +358,8 @@ export const useStore = create<Store>((set, get) => ({
 
   startMatch: (target) => {
     unlockAudio();
+    clearSavedMatch();
+    set({ savedMatch: null });
     track('sit', { target });
     const live = personalityFromStats(get().stats);
     const profile = get().profile
@@ -578,7 +643,15 @@ export const useStore = create<Store>((set, get) => ({
       set({ screen: 'menu', game: null, resultOpen: false, mode: 'solo', roomCode: null, deadlineAt: null, mySeat: 0 });
       return;
     }
-    set({ screen: 'menu', game: null, resultOpen: false, resultDismissed: false, matchOver: false });
+    clearSavedMatch();
+    set({
+      screen: 'menu',
+      game: null,
+      resultOpen: false,
+      resultDismissed: false,
+      matchOver: false,
+      savedMatch: null,
+    });
   },
 
   nextActor: () => {
@@ -667,3 +740,44 @@ export function humanCanWin(game: GameState | null): boolean {
 }
 
 export { claimOptions };
+
+/**
+ * Write the solo match to localStorage as it changes, on a trailing debounce:
+ * four cats acting in a row fire many `set`s a second and the state is a few
+ * kilobytes. The browser is what actually reloads the tab, so the only thing
+ * this has to survive is "the tab was killed", not "the app closed cleanly".
+ */
+if (typeof window !== 'undefined') {
+  let saveTimer: number | null = null;
+  useStore.subscribe((s, prev) => {
+    if (s.screen !== 'table' || s.mode !== 'solo' || !s.game) return;
+    const moved =
+      s.game !== prev.game ||
+      s.keep !== prev.keep ||
+      s.myOrder !== prev.myOrder ||
+      s.resultOpen !== prev.resultOpen ||
+      s.screen !== prev.screen;
+    if (!moved) return;
+    if (saveTimer !== null) window.clearTimeout(saveTimer);
+    saveTimer = window.setTimeout(() => {
+      saveTimer = null;
+      const now = useStore.getState();
+      if (now.screen !== 'table' || now.mode !== 'solo' || !now.game) return;
+      saveMatch({
+        target: now.target,
+        handNo: now.handNo,
+        dealer: now.dealer,
+        scores: now.scores,
+        handWins: now.handWins,
+        seats: now.seats,
+        game: now.game,
+        mySeat: now.mySeat,
+        myOrder: now.myOrder,
+        keep: now.keep,
+        matchOver: now.matchOver,
+        lastWinSeat: now.lastWinSeat,
+        resultOpen: now.resultOpen,
+      });
+    }, 250);
+  });
+}

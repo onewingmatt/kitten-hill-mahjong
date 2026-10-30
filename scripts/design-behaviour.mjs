@@ -58,7 +58,9 @@ const browser = await chromium.launch({ executablePath: '/usr/bin/google-chrome-
   await page.reload({ waitUntil: 'networkidle' });
   await page.waitForTimeout(600);
   const secondRun = await page.evaluate(() => !!document.querySelector('.coach'));
-  await page.getByRole('button', { name: 'Sit down' }).click();
+  // the CTA is "Start a new match" when a saved solo match is on the menu, and
+  // sitting down here is what replaces it — either label is the same decision
+  await page.getByRole('button', { name: /Sit down|Start a new match/ }).click();
   await page.waitForTimeout(2200);
   const secondSit = await page.evaluate(() => !!document.querySelector('.coach'));
   check('coach:first-visit-shows', first.coach, `${first.steps} step dot(s)`);

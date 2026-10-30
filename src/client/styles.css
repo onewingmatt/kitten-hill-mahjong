@@ -3401,3 +3401,230 @@ input, textarea, select { font-family: inherit; font-size: inherit; }
     0 0 0 2px var(--gold),
     0 3px 10px rgb(0 0 0 / 0.45);
 }
+
+/* ==========================================================================
+   The saved match, the record, the foot links
+   ========================================================================== */
+
+.resume__sub {
+  margin-top: 4px;
+  font-size: 11.5px;
+  line-height: 1.35;
+  color: rgb(248 240 225 / 0.78);
+}
+
+.menu__foot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  /* 0.5 measured 4.59:1 at 10px — a pass with no room, and the copy can change */
+  color: rgb(248 240 225 / 0.72);
+}
+.menu__footlink {
+  position: relative;
+  border: 0;
+  background: none;
+  padding: 0;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--gold);
+}
+/* 11px of text is a 15px control. Padding makes the box the target; the negative
+   margin hands the space straight back so the foot keeps its height. */
+.menu__footlink {
+  padding: 14px 10px;
+  margin: -14px -10px;
+}
+.menu__version {
+  font-size: 10px;
+  letter-spacing: 0.22em;
+}
+
+/* ==========================================================================
+   Fan: the meter answers a tap
+   ========================================================================== */
+
+/* it was a div carrying its whole explanation in `title`, which a phone never shows */
+.fanmeter {
+  position: relative;
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgb(248 240 225 / 0.8);
+  gap: 5px;
+  align-items: center;
+  display: flex;
+}
+/* the box IS the target (the audit measures boxes, and a phone does too); the
+   negative margin hands the extra height back to the dock row */
+.fanmeter {
+  padding: 15px 8px;
+  margin: -15px -8px;
+}
+
+.fansheet {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 330px;
+  width: 100%;
+}
+.fansheet__lead {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: rgb(248 240 225 / 0.82);
+}
+.fansheet__foot {
+  margin: 2px 0 0;
+  padding-top: 8px;
+  border-top: 1px solid rgb(255 255 255 / 0.09);
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: rgb(248 240 225 / 0.78);
+}
+.fanlist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.fanlist li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  line-height: 1.3;
+  color: rgb(248 240 225 / 0.72);
+}
+.fanlist li.is-ready { color: var(--cream); }
+.fanlist__mark { color: rgb(248 240 225 / 0.34); font-size: 10px; }
+.fanlist li.is-ready .fanlist__mark { color: var(--gold); }
+.fanlist__val {
+  font-variant-numeric: tabular-nums;
+  font-size: 11.5px;
+  color: rgb(248 240 225 / 0.6);
+}
+.fanlist li.is-ready .fanlist__val { color: var(--gold); font-weight: 700; }
+
+/* ==========================================================================
+   Online: the two things the server knew and the table never said
+   ========================================================================== */
+
+/* the socket handler has always written `online: 'offline'` and nothing read it,
+   so a dropped connection looked like four cats thinking about it */
+.netstrip {
+  position: absolute;
+  /* under the deadline bar, which owns the 3px at the HUD's edge */
+  top: 61px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: rgb(160 62 52 / 0.94);
+  border: 1px solid rgb(255 255 255 / 0.16);
+  box-shadow: var(--shadow-1);
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--cream);
+  white-space: nowrap;
+  pointer-events: none;
+}
+.netstrip__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--cream);
+  animation: netpulse 1.2s ease-in-out infinite;
+}
+@keyframes netpulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .netstrip__dot { animation: none; }
+}
+
+/* the server's turn clock, drawn under the HUD: 3px, no reflow, drains right */
+.deadline {
+  position: absolute;
+  top: 52px;
+  left: 0;
+  right: 0;
+  height: 3px;
+  z-index: 39;
+  overflow: hidden;
+  pointer-events: none;
+}
+.deadline i {
+  display: block;
+  height: 100%;
+  background: var(--gold);
+  transform-origin: left center;
+  transition: transform 0.2s linear;
+}
+.deadline.is-low i { background: var(--coral); }
+
+/* the saved-match card: three lines of information in the height of the
+   match-length card it replaces */
+.resume__head {
+  align-items: center;
+  min-height: 0;
+}
+.resume__label {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgb(248 240 225 / 0.66);
+}
+/* a text button, but a real target: padding makes the box 33px, the negative
+   margin keeps the row from growing to match it */
+.resume__drop {
+  border: 0;
+  background: none;
+  padding: 9px 8px;
+  margin: -9px -8px;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: rgb(248 240 225 / 0.62);
+}
+.resume__row {
+  align-items: center;
+  gap: 10px;
+  margin-top: 4px;
+}
+.resume__sub {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--cream);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fanlist__key {
+  margin: -2px 0 0;
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  color: rgb(248 240 225 / 0.5);
+}

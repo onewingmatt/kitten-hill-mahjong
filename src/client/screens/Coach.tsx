@@ -23,8 +23,11 @@ const STEPS = [
 
 /** First-hand walkthrough. Shown once, then remembered. */
 export function Coach() {
-  const dismissCoach = useStore((s) => s.dismissCoach);
-  const card = useDialog(dismissCoach);
+  // closeCoach spends the one-shot flag on the first run and only closes the
+  // panel on a replay from the menu
+  const close = useStore((s) => s.closeCoach);
+  const onTable = useStore((s) => s.screen === 'table');
+  const card = useDialog(close);
   const [step, setStep] = React.useState(0);
   const Icon = STEPS[step].icon;
   const last = step === STEPS.length - 1;
@@ -54,14 +57,15 @@ export function Coach() {
           ))}
         </div>
         <div className="row" style={{ gap: 8 }}>
-          <button className="btn btn--ghost" onClick={dismissCoach}>
+          <button className="btn btn--ghost" onClick={close}>
             Skip
           </button>
           <button
             className="btn btn--primary grow"
-            onClick={() => (last ? dismissCoach() : setStep(step + 1))}
+            onClick={() => (last ? close() : setStep(step + 1))}
           >
-            {last ? 'Deal me in' : 'Next'}
+            {/* "Deal me in" is a lie when the panel was opened from the menu */}
+            {last ? (onTable ? 'Deal me in' : 'Got it') : 'Next'}
           </button>
         </div>
       </div>

@@ -5,6 +5,7 @@ import { Creator } from './screens/Creator';
 import { Lobby } from './screens/Lobby';
 import { Game } from './Game';
 import { Announcer } from './Announcer';
+import { Coach } from './screens/Coach';
 import './styles.css';
 
 // Exposed for QA probes: the live store is the fastest way to read table state.
@@ -18,6 +19,8 @@ if (typeof window !== 'undefined') window.__khm = useStore;
 export function App() {
   const screen = useStore((s) => s.screen);
   const boot = useStore((s) => s.boot);
+  const coachSeen = useStore((s) => s.coachSeen);
+  const coachOpen = useStore((s) => s.coachOpen);
 
   React.useEffect(() => {
     boot();
@@ -27,6 +30,8 @@ export function App() {
     <>
       <Announcer />
       {screen === 'lobby' ? <Lobby /> : screen === 'creator' ? <Creator /> : screen === 'table' ? <Game /> : <Menu />}
+      {/* first run: over the table it is explaining. Any later time: whoever asked for it. */}
+      {(coachOpen || (screen === 'table' && !coachSeen)) && <Coach />}
     </>
   );
 }

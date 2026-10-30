@@ -2,12 +2,11 @@ import React from 'react';
 import { useStore, HUMAN, seatWind, humanClaims, humanKongs, humanCanWin, handView } from './store';
 import { Tile, TileBack, Melds, Flowers } from './components/Tile';
 import { CatFace, CatPaw } from './cat';
-import { estimateFan } from '../engine/bots/fan-estimate';
+import { estimateFan, fanBreakdown, type FanLine } from '../engine/bots/fan-estimate';
 import { countsOf } from '../engine/shanten';
 import { afterEachDiscard, blockByKind, decompose, describe as describeShape, distanceToReady } from '../engine/shape';
 import { kind, spriteUrl } from '../engine/tiles';
 import { ResultOverlay } from './screens/Result';
-import { Coach } from './screens/Coach';
 import { PlayerSheet } from './screens/PlayerSheet';
 import { Wash } from './screens/Wash';
 import { claimOptions, currentWaits } from '../engine/game';
@@ -44,7 +43,7 @@ export function Game() {
     banner,
     paw,
     resultOpen,
-    coachSeen,
+    online,
     stepBot,
     nextActor,
     selectTile,
@@ -73,6 +72,9 @@ export function Game() {
   const [sheetSeat, setSheetSeat] = React.useState<number | null>(null);
   /* reading the log should never cost you a turn or a claim */
   const [logOpen, setLogOpen] = React.useState(false);
+  /* the fan counter explains itself on demand: a phone has no hover, so the
+     `title` it used to carry reached nobody */
+  const [fanOpen, setFanOpen] = React.useState(false);
   /* the X in the HUD used to drop the hand on the first tap, from the corner
      where a thumb rests. Leaving mid-hand asks first; leaving a finished hand
      does not, because there is nothing left to lose. */
@@ -140,6 +142,12 @@ export function Game() {
     return () => window.clearInterval(id);
   }, [mode, deadlineAt]);
   const remainMs = deadlineAt ? Math.max(0, deadlineAt - nowMs) : null;
+  // the snapshot carries the deadline, not the length: the length is whatever
+  // was left when it arrived, which is right for the first frame of a turn
+  const deadlineTotal = React.useRef(0);
+  React.useEffect(() => {
+    deadlineTotal.current = deadlineAt ? Math.max(4000, deadlineAt - Date.now()) : 0;
+  }, [deadlineAt]);
 
   if (!game) return null;
 
@@ -148,6 +156,7 @@ export function Game() {
   const ended = game.phase === 'ended';
   const myWind = seatWind(mySeat, dealer);
   const myFan = estimateFan(countsOf(myHand), game.seats[mySeat].melds, myWind, game.roundWind);
+  const fanLines = fanBreakdown(countsOf(myHand), game.seats[mySeat].melds, myWind, game.roundWind);
   const canWin = humanCanWin(game);
   const kongs = humanKongs(game);
 
@@ -295,6 +304,19 @@ export function Game() {
         wall={game.wall.length}
       />
 
+      {/* online only: the two things the server knows and the table did not say */}
+      {mode === 'online' && online === 'offline' && (
+        <div className="netstrip" role="status">
+          <span className="netstrip__dot" aria-hidden="true" />
+          Connection lost — reconnecting
+        </div>
+      )}
+      {mode === 'online' && remainMs !== null && deadlineTotal.current > 0 && (
+        <div className={`deadline${remainMs < 5000 ? ' is-low' : ''}`} aria-hidden="true">
+          <i style={{ transform: `scaleX(${Math.max(0, Math.min(1, remainMs / deadlineTotal.current))})` }} />
+        </div>
+      )}
+
       <div className="opponents">
         {[3, 2, 1].map((d) => (mySeat + d) % 4).map((seat) => (
           <OpponentCard
@@ -428,7 +450,7 @@ export function Game() {
             </>
           )}
 
-          <FanMeter value={myFan} />
+          <FanMeter value={myFan} onOpen={() => setFanOpen(true)} />
         </div>
 
         <div className="row" style={{ minHeight: 22 }}>
@@ -602,7 +624,9 @@ export function Game() {
       )}
 
       {washing && <Wash seats={seats} />}
-      {coachSeen ? null : <Coach />}
+      {fanOpen && (
+        <FanSheet lines={fanLines} fan={myFan} minFan={game.minFan} onClose={() => setFanOpen(false)} />
+      )}
       {resultOpen && <ResultOverlay />}
     </div>
   );
@@ -846,10 +870,91 @@ function River({
   );
 }
 
-function FanMeter({ value }: { value: number }) {
+/**
+ * Why the hand is worth what the meter says.
+ *
+ * The score is a doubling of named patterns, and the only explanation lived in a
+ * `title` — invisible on a phone. This states each line, whether it is banked or
+ * one tile off, and what the table needs to let you declare.
+ */
+function FanSheet({
+  lines,
+  fan,
+  minFan,
+  onClose,
+}: {
+  lines: FanLine[];
+  fan: number;
+  minFan: number;
+  onClose: () => void;
+}) {
+  const ref = useDialog(onClose);
+  const have = Math.round(fan);
+  return (
+    <div
+      className="modal-scrim"
+      onPointerDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div className="card fansheet" ref={ref} role="dialog" aria-modal="true" aria-label="What this hand scores">
+        <div className="row row--between">
+          <h2 className="card-label">What this hand scores</h2>
+          <button className="icon-btn" aria-label="Close" onClick={onClose}>
+            <IconClose size={14} />
+          </button>
+        </div>
+        {lines.length === 0 ? (
+          <p className="fansheet__lead">
+            Nothing is doubling yet. A single suit, a dragon pung or your own wind each add one.
+          </p>
+        ) : (
+          <>
+            <p className="fansheet__lead">
+              Fan {have} · worth ×{Math.pow(2, have)} today.
+            </p>
+            <ul className="fanlist">
+              {lines.map((l, i) => (
+                <li key={`${l.label}-${i}`} className={l.ready ? 'is-ready' : ''}>
+                  <span className="fanlist__mark" aria-hidden="true">
+                    {l.ready ? '◆' : '◇'}
+                  </span>
+                  <span className="grow">{l.label}</span>
+                  {/* the double it is worth when the line completes: a half-finished
+                      dragon gives +1 of the estimate, not "0.45 doubles" */}
+                  <span className="fanlist__val">+{l.value >= 1 ? l.value : 1}</span>
+                </li>
+              ))}
+            </ul>
+            {/* A ◇ row is not worth nothing: a dragon pair already counts part of
+                a double toward the meter, which is why Fan 2 can be true while only
+                one row is completed. Saying "one tile away" hid that and made the
+                arithmetic wrong — so the legend says what the dots mean. */}
+            <p className="fanlist__key">◆ counts in full · ◇ counts part-way</p>
+          </>
+        )}
+        <p className="fansheet__foot">
+          {minFan > 0
+            ? have >= minFan
+              ? `Table minimum is ${minFan} doubles — you clear it.`
+              : `Table minimum is ${minFan} doubles — ${minFan - have} to go.`
+            : 'Any completed hand can be declared.'}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function FanMeter({ value, onOpen }: { value: number; onOpen: () => void }) {
   const have = Math.max(0, Math.min(4, Math.round(value)));
   return (
-    <div className="fanmeter" title="Doubles this shape is heading for — each one doubles the hand value">
+    <button
+      type="button"
+      className="fanmeter"
+      onClick={onOpen}
+      aria-label={`Fan ${have}, worth x${Math.pow(2, have)} — show what this hand is scoring`}
+      title="Doubles this shape is heading for — tap to see which"
+    >
       <span style={{ letterSpacing: '.14em' }}>fan</span>
       <span className="fanmeter__pips">
         {[0, 1, 2, 3].map((i) => (
@@ -859,7 +964,7 @@ function FanMeter({ value }: { value: number }) {
       <span style={{ color: have > 0 ? 'var(--gold)' : undefined, fontVariantNumeric: 'tabular-nums' }}>
         ×{Math.pow(2, have)}
       </span>
-    </div>
+    </button>
   );
 }
 
