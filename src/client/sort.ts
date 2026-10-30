@@ -1,10 +1,11 @@
 import { isSuit, rankOf, suitOf } from '../engine/tiles';
+import { decompose, type BlockShape } from '../engine/shape';
 
 /**
  * `manual` is the default: the hand is the player's to arrange, so nothing is
  * ever reordered behind their back. The other modes are opt-in tidying.
  */
-export type SortMode = 'manual' | 'suit' | 'rank' | 'sets';
+export type SortMode = 'manual' | 'suit' | 'rank' | 'sets' | 'smart';
 
 /**
  * Apply a remembered hand order to the current tiles. Entries that are no
@@ -38,9 +39,10 @@ export function moveInOrder(order: number[], from: number, to: number): number[]
 }
 
 /**
- * Three ways to read a hand. `suit` is the classic wash (suit runs), `rank`
- * lines up numbers across suits, and `sets` pulls the tiles that already
- * belong together to the front so a twelve-tile hand is easy to scan.
+ * Four ways to read a hand. `suit` is the classic wash (suit runs), `rank` lines
+ * up numbers across suits, `sets` pulls the tiles that already belong together
+ * to the front of the whole hand, and `smart` does that inside each suit — the
+ * way a player actually lays 13 tiles out.
  */
 export function sortHand(hand: number[], mode: SortMode): number[] {
   const a = hand.slice();
@@ -49,7 +51,27 @@ export function sortHand(hand: number[], mode: SortMode): number[] {
     return a.sort((x, y) => rankOf(x) - rankOf(y) || weight(x) - weight(y));
   }
   if (mode === 'suit') return a.sort((x, y) => weight(x) - weight(y));
+  if (mode === 'smart') return sortSmart(a);
   return sortBySets(a);
+}
+
+/**
+ * One suit at a time — dots, bamboo, characters, then winds, then dragons — and
+ * inside each suit the finished groups first, in numeric order, so a run and a
+ * pung of the same suit read as one sequence (123 456 777). After the finished
+ * groups come the pair, then the two-tile shapes that are one draw away from a
+ * run, then whatever is left.
+ *
+ * The grouping itself is `decompose`: the engine already reads a hand this way
+ * for the ready tracker, and the rack should not disagree with it.
+ */
+export function sortSmart(hand: number[]): number[] {
+  const rankOfShape: Record<BlockShape, number> = { set: 0, run: 0, pair: 1, partial: 2, single: 3 };
+  const groupOf = (k: number) => (isSuit(k) ? suitOf(k)! : k >= 31 ? 4 : 3);
+  return decompose(hand)
+    .map((b) => ({ tiles: b.tiles, group: groupOf(b.tiles[0]), rank: rankOfShape[b.shape], low: Math.min(...b.tiles) }))
+    .sort((x, y) => x.group - y.group || x.rank - y.rank || x.low - y.low)
+    .flatMap((b) => b.tiles);
 }
 
 /** Sort key: dots, bamboo, chars, winds, dragons. */

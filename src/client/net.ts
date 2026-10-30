@@ -4,7 +4,7 @@
  * one shared clock possible across four phones.
  */
 import { io, type Socket } from 'socket.io-client';
-import { useStore, type SeatMeta } from './store';
+import { pruneKeep, useStore, type SeatMeta } from './store';
 import { reconcileOrder } from './sort';
 import type { GameAction, GameState, Personality } from '../engine/types';
 import { defaultCat, type CatAppearance } from './cat';
@@ -106,6 +106,9 @@ function applySnapshot(st: {
   // snapshot (locally `act` used to do this, and online that code never runs)
   const hand = st.game?.seats[me].hand ?? [];
   const nextOrder = reconcileOrder(handChanged ? [] : prev.myOrder, hand);
+  // the server owns the hand; a mark whose tile has left it must go, or a later
+  // copy of that kind arrives pre-locked and the player cannot throw it
+  const nextKeep = handChanged ? [] : pruneKeep(prev.keep, hand);
 
   useStore.setState({
     mode: 'online',
@@ -129,6 +132,7 @@ function applySnapshot(st: {
     resultDismissed: st.game?.phase === 'ended' ? prev.resultDismissed : false,
     matchOver: st.handWins.some((w) => w >= st.target),
     myOrder: nextOrder,
+    keep: nextKeep,
   });
 }
 

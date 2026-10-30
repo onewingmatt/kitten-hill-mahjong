@@ -457,9 +457,14 @@ export function Game() {
           <Melds melds={game.seats[mySeat].melds} />
           <div className="grow" />
           <div className="segmented" role="group" aria-label="Sort hand">
-            {(['manual', 'suit', 'rank', 'sets'] as const).map((m) => (
-              <button key={m} className={sortMode === m ? 'is-on' : ''} onClick={() => setSort(m)}>
-                {m === 'manual' ? 'Mine' : m === 'suit' ? 'Suit' : m === 'rank' ? 'Rank' : 'Sets'}
+            {(['manual', 'suit', 'rank', 'sets', 'smart'] as const).map((m) => (
+              <button
+                key={m}
+                className={sortMode === m ? 'is-on' : ''}
+                onClick={() => setSort(m)}
+                aria-label={m === 'smart' ? 'Smart: by suit, with sets and runs grouped' : undefined}
+              >
+                {m === 'manual' ? 'Mine' : m === 'suit' ? 'Suit' : m === 'rank' ? 'Rank' : m === 'sets' ? 'Sets' : 'Smart'}
               </button>
             ))}
           </div>
@@ -499,7 +504,9 @@ export function Game() {
           {drawn && (
             <Tile
               k={drawn.k}
-              className="tile--held tile--ranked"
+              /* the drawn tile is pulled out of `sorted`, so it needs the mark class
+                 spelled out here or a just-drawn copy of a kept kind looks unlocked */
+              className={`tile--held tile--ranked${keep.includes(drawn.k) ? ' tile--kept' : ''}`}
               style={{ zIndex: 61 }}
               drawn
               raised={selected === drawn.i}

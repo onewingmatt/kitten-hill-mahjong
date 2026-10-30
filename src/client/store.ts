@@ -149,6 +149,16 @@ const PROFILE_KEY = 'khm.profile.v1';
 const PREFS_KEY = 'khm.prefs.v1';
 
 let mutedState = false;
+/**
+ * Marks are held by tile KIND, so the only thing to prune is a kind that has left
+ * the hand entirely (discarded, claimed, or dealt away). Anything else that drops
+ * a mark loses the player's intent without telling them.
+ */
+export function pruneKeep(keep: number[], hand: number[]): number[] {
+  const gone = keep.filter((k) => !hand.includes(k));
+  return gone.length === 0 ? keep : keep.filter((k) => hand.includes(k));
+}
+
 export function getMuted(): boolean {
   return mutedState;
 }
@@ -449,8 +459,8 @@ export const useStore = create<Store>((set, get) => ({
     set({ game: next, tick: get().tick + 1, selected: null });
     // a mark on a tile that has left the hand is not worth carrying around
     const mine = next.seats[get().mySeat]?.hand ?? [];
-    const kept = get().keep.filter((k) => mine.includes(k));
-    if (kept.length !== get().keep.length) set({ keep: kept });
+    const kept = pruneKeep(get().keep, mine);
+    if (kept !== get().keep) set({ keep: kept });
 
     // what the table learns about you: only your own decisions, never a bot's
     if (action.seat === get().mySeat) {
@@ -554,8 +564,11 @@ export const useStore = create<Store>((set, get) => ({
 
   toggleKeep: (kinds) => {
     const cur = get().keep;
-    const all = kinds.every((k) => cur.includes(k));
-    const next = all ? cur.filter((k) => !kinds.includes(k)) : [...new Set([...cur, ...kinds])];
+    // only real tile ids: a stray null/undefined must not become an unremovable mark
+    const clean = kinds.filter((k) => Number.isInteger(k));
+    if (clean.length === 0) return;
+    const all = clean.every((k) => cur.includes(k));
+    const next = all ? cur.filter((k) => !clean.includes(k)) : [...new Set([...cur, ...clean])];
     sfx.select();
     set({ keep: next, keepNudge: get().keepNudge + 1 });
   },
