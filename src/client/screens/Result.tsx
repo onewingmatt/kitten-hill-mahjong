@@ -5,6 +5,7 @@ import { fortuneFor } from "../fortunes";
 import { kind, spriteUrl } from "../../engine/tiles";
 import { IconTrophy } from "../components/Icons";
 import { useDialog } from "../useDialog";
+import { competitionRanks } from "../rank";
 
 const WIND_GLYPH = ["東", "南", "西", "北"];
 const CONFETTI_COLORS = [
@@ -39,6 +40,8 @@ export function ResultOverlay() {
   const standings = scores
     .map((score, seat) => ({ seat, score, wins: handWins[seat] }))
     .sort((a, b) => b.score - a.score || b.wins - a.wins);
+
+  const ranked = competitionRanks(standings);
 
   const champion = matchOver ? handWins.findIndex((w) => w >= target) : -1;
   const fortune = win
@@ -183,13 +186,19 @@ export function ResultOverlay() {
         <div>
           <h2 className="card-label">The table</h2>
           <div className="standings">
-            {standings.map((s, i) => (
+            {ranked.map((s) => (
               <div
                 key={s.seat}
                 className={`standing seat--${s.seat} ${s.seat === subject ? "is-winner" : ""}`}
               >
-                <span className={`medal ${!tiedTable && i < 3 ? `medal--${i + 1}` : ""}`}>
-                  {i + 1}
+                {/* Rank is competition rank, so two cats on the same score share a
+                    place and the next one skips — and a table where nobody is ahead
+                    of anybody shows "=" rather than inventing a podium. */}
+                <span
+                  className={`medal ${!tiedTable && s.rank <= 3 ? `medal--${s.rank}` : ""}${tiedTable ? " medal--tie" : ""}`}
+                  aria-hidden="true"
+                >
+                  {tiedTable ? "=" : s.rank}
                 </span>
                 <div className="standing__badge">
                   <CatFace cat={seats[s.seat]?.cat} live={false} />

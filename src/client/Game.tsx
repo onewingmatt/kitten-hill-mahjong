@@ -44,6 +44,7 @@ export function Game() {
     paw,
     resultOpen,
     online,
+    rotateGuard,
     stepBot,
     nextActor,
     selectTile,
@@ -97,7 +98,7 @@ export function Game() {
   React.useEffect(() => {
     if (mode === 'online') return;
     if (!game || game.phase === 'ended') return;
-    if (userPaused || logOpen) {
+    if (userPaused || logOpen || rotateGuard) {
       // clear the marker so the same position can step again once play resumes
       lastSeq.current = -1;
       return;
@@ -109,7 +110,7 @@ export function Game() {
     const delay = 380 + Math.random() * 320;
     const id = window.setTimeout(() => stepBot(), delay);
     return () => window.clearTimeout(id);
-  }, [game, game?.seq, nextActor, stepBot, mode, userPaused, logOpen]);
+  }, [game, game?.seq, nextActor, stepBot, mode, userPaused, logOpen, rotateGuard]);
 
   /* ---- auto-pass so a forgotten claim never stalls the table ---- */
   const myClaims = humanClaims(game);
@@ -122,17 +123,17 @@ export function Game() {
   const CLAIM_MS = 15000;
   const [claimLeft, setClaimLeft] = React.useState(CLAIM_MS);
   React.useEffect(() => {
-    if (!waiting || logOpen) return;
+    if (!waiting || logOpen || rotateGuard) return;
     const start = Date.now();
     setClaimLeft(CLAIM_MS);
     const id = window.setInterval(() => setClaimLeft(Math.max(0, CLAIM_MS - (Date.now() - start))), 100);
     return () => window.clearInterval(id);
-  }, [waiting, game?.seq, logOpen]);
+  }, [waiting, game?.seq, logOpen, rotateGuard]);
   React.useEffect(() => {
-    if (mode === 'online' || !waiting || userPaused || logOpen) return;
+    if (mode === 'online' || !waiting || userPaused || logOpen || rotateGuard) return;
     const id = window.setTimeout(() => humanPass(), CLAIM_MS);
     return () => window.clearTimeout(id);
-  }, [waiting, game?.seq, humanPass, mode, userPaused, logOpen]);
+  }, [waiting, game?.seq, humanPass, mode, userPaused, logOpen, rotateGuard]);
 
   /* ---- online: the bar renders the server's clock, not a local guess ---- */
   const [nowMs, setNowMs] = React.useState(() => Date.now());

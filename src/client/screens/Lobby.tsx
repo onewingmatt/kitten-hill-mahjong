@@ -91,7 +91,7 @@ export function Lobby() {
         )}
 
         <div className="grow" />
-        <p style={{ textAlign: 'center', fontSize: 10, color: 'rgba(248,240,225,.4)', margin: 0 }}>
+        <p style={{ textAlign: 'center', fontSize: 10, color: 'rgba(248,240,225,.66)', margin: 0 }}>
           {online === 'connected' ? 'connected' : online === 'offline' ? 'reconnecting…' : 'tap create or join'}
         </p>
       </div>
@@ -186,7 +186,7 @@ export function Lobby() {
       >
         {host ? 'Start the hand' : 'Waiting for the host'}
       </button>
-      <p style={{ textAlign: 'center', fontSize: 10, color: 'rgba(248,240,225,.4)', margin: '6px 0 0' }}>
+      <p style={{ textAlign: 'center', fontSize: 10, color: 'rgba(248,240,225,.66)', margin: '6px 0 0' }}>
         {seats.filter((s) => s && s.tag !== 'open').length} of 4 seated
       </p>
     </div>

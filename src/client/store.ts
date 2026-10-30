@@ -83,6 +83,8 @@ interface Store {
   savedMatch: SavedMatch | null;
   /** The tutorial, re-opened from the menu rather than only on the first hand. */
   coachOpen: boolean;
+  /** True while a landscape phone is showing the rotate guard: nothing should tick. */
+  rotateGuard: boolean;
   rival: { name: string; personality: Personality; cat: CatAppearance; code: string } | null;
   lastWinSeat: number | null;
   tick: number;
@@ -123,6 +125,7 @@ interface Store {
   setPaw: (p: PawPose) => void;
   dismissCoach: () => void;
   openCoach: () => void;
+  setRotateGuard: (v: boolean) => void;
   closeCoach: () => void;
   /** Pick up the saved solo match exactly where it stopped. */
   resume: () => void;
@@ -266,6 +269,7 @@ export const useStore = create<Store>((set, get) => ({
   coachSeen: true,
   savedMatch: null,
   coachOpen: false,
+  rotateGuard: false,
   rival: null,
   lastWinSeat: null,
   tick: 0,
@@ -310,6 +314,10 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   openCoach: () => set({ coachOpen: true }),
+
+  setRotateGuard: (v) => {
+    if (get().rotateGuard !== v) set({ rotateGuard: v });
+  },
 
   closeCoach: () => {
     // the first-run coach also spends the one-shot flag; a replay does not
