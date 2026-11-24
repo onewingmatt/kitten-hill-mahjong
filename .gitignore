@@ -10,4 +10,6 @@ data/
 
 # scratch
 *.log
+*.tmp.ts
+scripts/tmp/
 .DS_Store

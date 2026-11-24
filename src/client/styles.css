@@ -305,7 +305,7 @@ input, textarea, select { font-family: inherit; font-size: inherit; }
   background: var(--seat);
 }
 
-.seat__score { font-variant-numeric: tabular-nums; font-weight: 700; color: var(--gold); }
+.seat__wins { font-variant-numeric: tabular-nums; font-weight: 700; color: var(--gold); }
 
 .seat__backs {
   display: flex;
@@ -464,7 +464,7 @@ input, textarea, select { font-family: inherit; font-size: inherit; }
 }
 
 .wall__count small {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -833,6 +833,58 @@ input, textarea, select { font-family: inherit; font-size: inherit; }
   text-transform: uppercase;
   color: var(--gold);
   font-weight: 700;
+}
+
+/* The rival form is secondary on a fresh install; keep its entry compact and
+   scroll its action into view only after the player chooses to open it. */
+.screen--menu .menu__rival { padding: 9px 12px; }
+.menu__rival-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 44px;
+  padding: 0;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  color: var(--cream);
+}
+.menu__rival-copy { display: flex; flex-direction: column; gap: 3px; }
+.menu__rival-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--gold);
+}
+.menu__rival-subtitle { font-size: 11px; color: rgb(248 240 225 / 0.68); }
+.menu__rival-mark {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  color: var(--gold);
+  background: rgb(232 191 116 / 0.08);
+  font-size: 18px;
+  line-height: 1;
+}
+.menu__rival-form { display: flex; flex-direction: column; margin-top: 10px; }
+.menu__rival-form[hidden] { display: none; }
+.menu__code-error { margin: 8px 0 0; font-size: 11px; line-height: 1.5; color: var(--coral); }
+.menu__disabled-note {
+  margin: -2px 0 0;
+  text-align: center;
+  font-size: 11px;
+  line-height: 1.3;
+  color: rgb(248 240 225 / 0.68);
+}
+.menu__online:disabled {
+  cursor: not-allowed;
+  background: rgb(255 255 255 / 0.035);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.14);
+  color: rgb(248 240 225 / 0.62);
 }
 
 /* creator */
@@ -2207,29 +2259,29 @@ input, textarea, select { font-family: inherit; font-size: inherit; }
 .river__tag--w { top: -16px; left: 50%; margin-left: -7px; }
 .river__tag--e { top: -16px; left: 50%; margin-left: -7px; }
 
-/* ---- wall: four stacks that shorten as the wall empties ---- */
+/* ---- wall: four physical-looking stacks around a legible count ---------- */
 .wall__ring {
   position: relative;
-  width: 66px;
-  height: 66px;
+  width: 56px;
+  height: 56px;
 }
 
 .wall__seg {
   position: absolute;
-  border-radius: 3px;
-  background: linear-gradient(160deg, var(--tile-back-1), var(--tile-back-2));
-  box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 0.2),
-    0 2px 4px rgb(0 0 0 / 0.45);
+  display: grid;
+  gap: 1px;
+  border-radius: 2px;
   transition: transform 0.5s ease, opacity 0.5s ease;
+  opacity: calc(0.34 + var(--left) * 0.66);
 }
 
 .wall__seg--n,
 .wall__seg--s {
-  left: 4px;
-  right: 4px;
+  left: 9px;
+  right: 9px;
   height: 7px;
-  transform-origin: left center;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  transform-origin: center;
   transform: scaleX(calc(0.18 + var(--left) * 0.82));
 }
 .wall__seg--n { top: 0; }
@@ -2237,24 +2289,38 @@ input, textarea, select { font-family: inherit; font-size: inherit; }
 
 .wall__seg--e,
 .wall__seg--w {
-  top: 4px;
-  bottom: 4px;
+  top: 9px;
+  bottom: 9px;
   width: 7px;
-  transform-origin: center top;
+  grid-template-rows: repeat(4, minmax(0, 1fr));
+  transform-origin: center;
   transform: scaleY(calc(0.18 + var(--left) * 0.82));
 }
 .wall__seg--e { right: 0; }
 .wall__seg--w { left: 0; }
 
-.wall__core {
-  position: absolute;
-  inset: 11px;
-  border-radius: 50%;
-  background: radial-gradient(circle at 40% 30%, rgb(255 255 255 / 0.06), rgb(0 0 0 / 0.28));
-  box-shadow: inset 0 0 10px rgb(0 0 0 / 0.45);
+.wall__tile {
+  min-width: 0;
+  min-height: 0;
+  border: 1px solid rgb(0 0 0 / 0.28);
+  border-radius: 1.5px;
+  background: linear-gradient(145deg, var(--tile-back-1), var(--tile-back-2));
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.3), 0 1px 1px rgb(0 0 0 / 0.34);
 }
 
-.wall__count { font-size: 15px; }
+.wall__core {
+  position: absolute;
+  inset: 9px;
+  border: 1px solid rgb(232 191 116 / 0.32);
+  border-radius: 11px;
+  background: linear-gradient(155deg, #174c43, #0b2b27 70%);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.15),
+    inset 0 -3px 7px rgb(0 0 0 / 0.52),
+    0 2px 5px rgb(0 0 0 / 0.5);
+}
+
+.wall__count { font-size: 14px; }
 
 /* ---- type scale: nothing that has to be read sits under 10px ---- */
 .seat__meta { font-size: 10px; }
@@ -2365,11 +2431,6 @@ input, textarea, select { font-family: inherit; font-size: inherit; }
 /* status line sits in the most-watched strip on the screen: it should be readable */
 .dock__foot .muted, .dock__status { color: rgb(232 243 238 / 0.82); }
 
-/* the wall block is what squeezes the four rivers: give its height back */
-.wall__ring { width: 56px; height: 56px; }
-.wall__core { inset: 9px; }
-.wall { gap: 1px; }
-
 /* ==========================================================================
    Rivers — one block of truth
    Flex wrapping centres every row (a grid left-aligns the short last row, which
@@ -2398,7 +2459,8 @@ input, textarea, select { font-family: inherit; font-size: inherit; }
   :root { --river-tile: 21px; }
   .wall__ring { width: 44px; height: 44px; }
   .wall__core { inset: 7px; }
-  .wall__count { font-size: 13px; }
+  .wall__count { font-size: 12px; }
+  .wall__count small { font-size: 10px; letter-spacing: 0; }
   /* seven across keeps a full pile to two rows, which is what clears the ring */
   .river--n, .river--s { max-width: calc(var(--river-tile) * 7 + 12px); }
   .river--w, .river--e { max-width: calc(var(--river-tile) * 5 + 8px); }
@@ -2712,6 +2774,10 @@ input, textarea, select { font-family: inherit; font-size: inherit; }
   font-weight: 600;
   color: rgb(248 240 225 / 0.6);
 }
+.creator__coat-colour h3 {
+  font-size: 10.5px;
+  color: rgb(248 240 225 / 0.72);
+}
 
 .creator__hint {
   margin: 0;
@@ -2776,6 +2842,319 @@ input, textarea, select { font-family: inherit; font-size: inherit; }
 
 .screen--creator {
   gap: 12px;
+}
+
+/* ---- how to play: the full rules, one scroll ---------------------------- */
+
+.screen--howto {
+  gap: 10px;
+}
+
+.howto__head {
+  flex: 0 0 auto;
+}
+
+.howto__scroll {
+  overflow-y: auto;
+  padding-bottom: 18px;
+  padding-right: 2px;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.howto__lead {
+  margin: 0 0 2px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: rgb(248 240 225 / 0.88);
+}
+
+.howto__card p {
+  margin: 0 0 8px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: rgb(248 240 225 / 0.82);
+}
+
+.howto__card > :last-child {
+  margin-bottom: 0;
+}
+
+.howto__card b {
+  color: var(--cream);
+  font-weight: 600;
+}
+
+.howto__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.howto__num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  color: var(--felt-3);
+  background: linear-gradient(180deg, #f0cd8b, var(--gold));
+  letter-spacing: 0;
+}
+
+.howto__fig {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  margin: 2px 0 8px;
+}
+
+.howto__strip {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.howto__groups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  margin-bottom: 10px;
+}
+
+.howto__group {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.howto__group-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--cream);
+}
+
+.howto__group-note {
+  font-size: 10px;
+  color: rgb(248 240 225 / 0.66);
+}
+
+.howto__aside {
+  font-size: 11px;
+  line-height: 1.45;
+  color: rgb(248 240 225 / 0.66);
+}
+
+.howto__list {
+  margin: 0 0 8px;
+  padding-left: 15px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: rgb(248 240 225 / 0.82);
+}
+
+.howto__list li::marker {
+  color: var(--gold);
+}
+
+.howto__stats {
+  display: flex;
+  gap: 8px;
+}
+
+.howto__stats > div {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgb(0 0 0 / 0.18);
+}
+
+.howto__stats span {
+  font-family: var(--font-display);
+  font-size: 17px;
+  color: var(--gold);
+  font-variant-numeric: tabular-nums;
+}
+
+.howto__stats small {
+  font-size: 10px;
+  line-height: 1.3;
+  color: rgb(248 240 225 / 0.66);
+}
+
+.howto__foot-note {
+  margin: 4px 0 0;
+  text-align: center;
+  font-size: 11px;
+  color: rgb(248 240 225 / 0.64);
+}
+
+/* one fade only, anchored to the button — same rule as the creator footer */
+.howto__footer {
+  position: relative;
+  flex: 0 0 auto;
+  padding-top: 12px;
+}
+
+.howto__footer::before {
+  content: '';
+  position: absolute;
+  left: -16px;
+  right: -16px;
+  bottom: calc(100% - 2px);
+  height: 22px;
+  pointer-events: none;
+  background: linear-gradient(180deg, transparent, rgb(9 32 28 / 0.92));
+}
+
+.howto__done {
+  width: 100%;
+  height: 48px;
+  font-size: 15px;
+}
+
+@media (max-height: 700px) {
+  .howto__footer::before {
+    height: 18px;
+  }
+}
+
+/* ---- the cattery: player cats other people can meet --------------------- */
+
+.cattery {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  /* the scrim centres a `flex: 0 0 auto` card, so without a width the sheet sizes
+     to its widest unbreakable line — a 13-character cat code took it to 670px
+     inside a 390px screen and clipped the note off the right edge */
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  max-height: min(78dvh, 620px);
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.cattery__title {
+  margin: 0;
+  font-size: 12px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--gold);
+}
+
+.cattery__sub {
+  display: block;
+  margin-top: 3px;
+  font-size: 11px;
+  color: rgb(248 240 225 / 0.66);
+}
+
+.cattery__mine {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border-radius: 12px;
+  background: rgb(0 0 0 / 0.2);
+}
+
+.cattery__mine-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.cattery__mine-copy b {
+  font-size: 12.5px;
+  color: var(--cream);
+}
+
+.cattery__mine-copy span {
+  font-size: 10.5px;
+  color: rgb(248 240 225 / 0.66);
+}
+
+.cattery__code {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.06em;
+  color: rgb(248 240 225 / 0.66) !important;
+  overflow-wrap: anywhere;
+}
+
+.cattery__list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cattery__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgb(255 255 255 / 0.05);
+}
+
+.cattery__who {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.cattery__who b {
+  font-size: 12.5px;
+  color: var(--cream);
+}
+
+.cattery__who span {
+  font-size: 10.5px;
+  color: rgb(248 240 225 / 0.66);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cattery__empty {
+  margin: 0;
+  padding: 12px 4px;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: rgb(248 240 225 / 0.66);
+  text-align: center;
+}
+
+.cattery__status {
+  margin: 0;
+  font-size: 11px;
+}
+.cattery__status.is-ok { color: var(--gold); }
+.cattery__status.is-bad { color: var(--coral); }
+
+.cattery__note {
+  margin: 0;
+  font-size: 10.5px;
+  line-height: 1.45;
+  color: rgb(248 240 225 / 0.66);
+  overflow-wrap: anywhere;
 }
 
 /* ---- a call you cannot miss ---- */
@@ -3200,7 +3579,9 @@ input, textarea, select { font-family: inherit; font-size: inherit; }
 .opp--east .opp__paw,
 .opp--north .opp__paw {
   left: auto;
-  right: 4px;
+  right: 0px;
+  width: 17px;
+  height: 17px;
   margin-left: 0;
 }
 .opp__hold { margin-right: 17px; }
@@ -3681,4 +4062,363 @@ input, textarea, select { font-family: inherit; font-size: inherit; }
   font-size: 12px;
   font-weight: 700;
   color: rgb(248 240 225 / 0.55);
+}
+
+/* ==========================================================================
+   Retail pass — the fold, the concealed hand, the sub-44 rows
+   ========================================================================== */
+
+/* ---- the menu is one screen again --------------------------------------- */
+
+/* Measured before: the menu carried 1059px of content in an 844px window, so
+   FACE A CAT was sliced mid-border at the fold on a 390 phone (47 of 187px
+   visible at 375x667) with no scrollbar and no fade. The hero was 232px of
+   logo, 27% of the glass, before a single control — that was the budget leak. */
+.screen--menu { gap: 8px; }
+.screen--menu > .card { padding: 12px; }
+.screen--menu .card h2 { margin-bottom: 6px; }
+
+/* the hero is decoration and was taking 27% of the glass: 232px at 390x844,
+   236 at 414x896. Compact unconditionally, smaller again on a 667 phone. */
+.screen--menu .menu__hero { padding: 0; gap: 2px; }
+.screen--menu .menu__cat { width: 84px; height: 84px; }
+.screen--menu .wordmark h1 { font-size: 28px; }
+.screen--menu .wordmark p { margin-top: 3px; }
+
+@media (max-height: 700px) {
+  .screen--menu .menu__cat { width: 68px; height: 68px; }
+  .screen--menu .wordmark h1 { font-size: 24px; }
+  .screen--menu .menu__hero::before { top: -16px; height: 180px; }
+}
+
+/* ---- a ghost button that does not read as a dead one --------------------- */
+
+/* 8% fill under a 16% rim on a dark page reads as "unavailable" on first
+   look, which is the one thing a secondary CTA must never say */
+.btn--ghost {
+  background: rgb(255 255 255 / 0.1);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.24);
+}
+
+/* a full-width second tier earns a rim in the palette's own gold instead of
+   a grey one, so it reads as a choice rather than a disabled control */
+.btn--outline {
+  background: rgb(232 191 116 / 0.06);
+  box-shadow: inset 0 0 0 1px rgb(232 191 116 / 0.4);
+  color: var(--cream);
+}
+
+/* ---- thirteen tiles, not a progress bar --------------------------------- */
+
+/* The concealed strip was 3.5x11 slivers (aspect 0.32 against tile art at
+   0.80), so every cold read called it a loading bar stuck at zero. Width and
+   rounding carry the identity; the strip height is unchanged, so no card
+   grows. 13 backs at a 6px pitch = 77px inside 84px of usable width. */
+.opp__hold { padding: 0 9px; margin-right: 19px; }
+.opp__back { width: 6px; height: 10px; border-radius: 1.5px; box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.26); }
+
+/* the tertiary link sat at 0.55 cream on the card: a real control, styled
+   like disabled text */
+.menu__backup { color: rgb(248 240 225 / 0.72); }
+
+/* ---- every hand-sized row answers a thumb ------------------------------- */
+
+/* Boxes stay where they were: the target grows on a pseudo-element that
+   stops inside the grid gap, so no row reflows and no two neighbours claim
+   the same pixel. */
+.pill,
+.btn--sm,
+.menu__backup,
+.swatch { position: relative; }
+
+.pill::before,
+.btn--sm::before,
+.menu__backup::before,
+.swatch::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -3px;
+  bottom: -3px;
+}
+.btn--sm::before { top: -4px; bottom: -4px; }
+/* a 32px text link needs 6px a side; the horizontal is already the word */
+.menu__backup::before { top: -6px; bottom: -6px; }
+/* the swatch grid's 6px gap absorbs 3px a side, which lands exactly on 40x44 */
+.swatch::before { top: -5px; bottom: -5px; left: -3px; right: -3px; }
+
+/* the chrome's square buttons were 42x42, 2px under the thumb floor. Scoped
+   to the chrome rows: the rival card's remove button shares the class and
+   lives in a 40px badge row that has no room for it. */
+.hud .icon-btn,
+.dock__foot .icon-btn,
+.screen__corner { width: 44px; height: 44px; }
+
+/* the last three 42-43px rows: a copy chip, the identity button and the
+   tutorial link, all of them primary taps on the first screen */
+.codechip { min-height: 44px; }
+.dock__you { min-height: 44px; }
+.menu__footlink { padding: 15px 10px; margin: -15px -10px; }
+
+/* ---- the dock's paw was clipping the rack ------------------------------- */
+
+/* .dock__foot reserved 84px but the paw renders 92.3 tall, so its top 5.4px
+   sat on the second hand row. The last grid row pays for it. */
+.dock__foot { min-height: 96px; }
+
+/* ---- the creator names its section once -------------------------------- */
+
+/* The card's <h2> now renders sr-only (the jump row above the scroller is the
+   visible label). The cut row under the footer gets a taller ramp so it
+   dissolves instead of looking sliced. */
+.creator__footer::before { height: 32px; }
+
+/* The wall is a miniature of tile backs, not four smooth progress bars. Keep
+   the 56px footprint so long rivers still have room to breathe. */
+.wall { gap: 0; }
+
+/* Four visible, simple sort choices; the two specialist layouts live in More. */
+.segmented--sort {
+  gap: 2px;
+  max-width: 100%;
+}
+.segmented--sort button {
+  flex: 0 1 auto;
+  min-width: 0;
+  padding-inline: 4px;
+  font-size: 10.5px;
+  letter-spacing: 0.015em;
+  white-space: nowrap;
+}
+.segmented--sort button[aria-haspopup='dialog'] {
+  padding-right: 6px;
+}
+.segmented--sort button[aria-haspopup='dialog']::after {
+  content: '';
+  width: 5px;
+  height: 5px;
+  margin-left: 4px;
+  border-right: 1px solid currentColor;
+  border-bottom: 1px solid currentColor;
+  transform: translateY(-1px) rotate(45deg);
+  opacity: 0.72;
+}
+
+.sort-scrim {
+  align-items: flex-end;
+  justify-content: center;
+  padding: 16px 12px calc(var(--safe-b) + 20px);
+}
+.modal-scrim.sort-scrim > .sort-sheet {
+  width: min(100%, 430px);
+  margin: 0 auto;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border-color: rgb(232 191 116 / 0.22);
+  background: linear-gradient(165deg, #1d302b, #111f1c 74%);
+}
+.sort-sheet__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.sort-sheet__head h2 {
+  margin: 0;
+  font-size: 12px;
+  letter-spacing: 0.14em;
+}
+.sort-sheet__hint {
+  margin: 5px 0 0;
+  color: rgb(248 240 225 / 0.72);
+  font-size: 11px;
+  line-height: 1.4;
+}
+.sort-sheet__head .icon-btn {
+  flex: 0 0 44px;
+  width: 44px;
+  height: 44px;
+}
+.sort-sheet__options {
+  display: grid;
+  gap: 8px;
+}
+.sort-option {
+  width: 100%;
+  min-height: 56px;
+  padding: 9px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  text-align: left;
+  color: var(--cream);
+  border: 1px solid rgb(255 255 255 / 0.12);
+  border-radius: 12px;
+  background: rgb(0 0 0 / 0.18);
+}
+.sort-option.is-on {
+  border-color: rgb(232 191 116 / 0.64);
+  background: rgb(232 191 116 / 0.1);
+}
+.sort-option__copy {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+.sort-option__copy strong {
+  color: var(--cream);
+  font-size: 13px;
+}
+.sort-option__copy span {
+  color: rgb(248 240 225 / 0.74);
+  font-size: 11px;
+  line-height: 1.35;
+}
+.sort-option__mark {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+  border: 1px solid rgb(248 240 225 / 0.42);
+  border-radius: 50%;
+}
+.sort-option.is-on .sort-option__mark {
+  border-color: var(--gold);
+  background: radial-gradient(circle, var(--gold) 0 3px, transparent 3.5px);
+  box-shadow: 0 0 0 2px rgb(232 191 116 / 0.12);
+}
+
+/* ---- options ------------------------------------------------------------- */
+.options { width: min(360px, 100%); }
+.options__head .icon-btn {
+  flex: 0 0 44px;
+  width: 44px;
+  height: 44px;
+}
+.options__rows {
+  display: grid;
+  gap: 10px;
+  margin-top: 6px;
+}
+.opt {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 56px;
+  padding: 9px 12px;
+  border: 1px solid rgb(255 255 255 / 0.12);
+  border-radius: 12px;
+  background: rgb(0 0 0 / 0.18);
+}
+.opt__text {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+.opt__label {
+  color: var(--cream);
+  font-size: 13px;
+  font-weight: 600;
+}
+.opt__detail {
+  color: rgb(248 240 225 / 0.72);
+  font-size: 11px;
+  line-height: 1.35;
+}
+.opt__toggle { flex: 0 0 auto; }
+.opt__toggle button {
+  min-width: 46px;
+  height: 32px;
+  padding: 0 8px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+/* a 32px chip in a 44px thumb target, without taking height off anything */
+.opt__toggle button::before {
+  content: "";
+  position: absolute;
+  inset: -6px 0;
+}
+.opt__toggle button.is-on {
+  background: linear-gradient(180deg, rgb(232 191 116 / 0.96), rgb(201 154 78 / 0.96));
+  color: #2a1d12;
+}
+.options__foot {
+  margin: 12px 0 0;
+  color: rgb(248 240 225 / 0.62);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+/* ---- rank printed on characters tiles ------------------------------------
+   The 萬 tiles carry their rank as a Chinese numeral over the character, which
+   is unreadable if you have not learned 一二三四五六七八九. This is a preference
+   (Options → Numbers on character tiles) drawn on ::before, because ::after is
+   already the completes-ring and the kept mark. */
+.has-numerals .tile[data-num]::before {
+  content: attr(data-num);
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  z-index: 2;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 3px;
+  display: grid;
+  place-items: center;
+  border-radius: 4px;
+  background: rgb(9 28 25 / 0.84);
+  color: var(--ivory);
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.4);
+  pointer-events: none;
+}
+/* the river is a third the size: keep the chip inside the art without shrinking
+   the type below the 10px floor */
+.has-numerals .river .tile[data-num]::before {
+  top: 1px;
+  left: 1px;
+  transform: scale(0.86);
+  transform-origin: top left;
+}
+/* melds are 0.58 of a hand tile — a chip there is a smudge over the art */
+.has-numerals .meld .tile[data-num]::before { content: none; }
+
+/* the advanced rule sits under its switches, not beside them: four pills will
+   not share a row with a label at 360px */
+.opt--stack {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 9px;
+}
+.opt__pills { justify-content: flex-start; }
+.opt__pills .pill { flex: 0 1 auto; }
+.opt__tag {
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid rgb(232 191 116 / 0.5);
+  color: var(--gold);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  vertical-align: 1px;
+}
+
+/* four pills, one row, 38px tall: the thumb target is 44 without moving them */
+.opt__pills .pill::before {
+  content: "";
+  position: absolute;
+  inset: -3px 0;
 }

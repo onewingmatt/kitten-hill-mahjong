@@ -103,7 +103,10 @@ export function choosePlan(
     else honourTiles += counts[k];
   }
 
-  if (melds.length === 0 && p.limitHunter > 0.6) {
+  // 0.6 was unreachable from a measured record (fan×0.16 caps near 0.3), so the
+  // plan never fired for a player-derived cat. 0.35 is inside the measurable
+  // range, and the wall has to be deep enough to chase thirteen orphans.
+  if (melds.length === 0 && p.limitHunter > 0.35 && wallLeft > 40) {
     let uniq = 0;
     for (const k of THIRTEEN_ORPHAN_SET) if (counts[k] > 0) uniq++;
     if (uniq >= 11) {
@@ -116,7 +119,7 @@ export function choosePlan(
   let bestSuit = 0;
   let bestScore = -Infinity;
   for (let s = 0; s < 3; s++) {
-    const score = suitCount[s] + p.suits[s] * 1.6 + (suitCount[s] >= 5 ? 1 : 0);
+    const score = suitCount[s] + p.suits[s] * 2.6 + (suitCount[s] >= 5 ? 1 : 0);
     if (score > bestScore) { bestScore = score; bestSuit = s; }
   }
 
@@ -178,10 +181,17 @@ export function chooseDiscard(s: GameState, seat: number, p: Personality): Disca
   const wind = (seat - s.dealer + 4) % 4;
   const plan = choosePlan(counts, player.melds, p, wind, s.roundWind, s.wall.length);
   const planNow = estimateFan(counts, player.melds, wind, s.roundWind);
-  const fanWeight = BOT_TUNING.fan * (0.8 + 0.7 * p.greed);
+  /*
+   * With a table minimum, doubles stop being a tiebreak and become the objective:
+   * a cat that locks a ready hand which can never be declared draws instead of
+   * winning. Scaling the fan weight by the gate is what keeps a gated table from
+   * turning into four cats waiting for the wall.
+   */
+  const gate = s.minFan ?? 0;
+  const fanWeight = BOT_TUNING.fan * (0.8 + 0.7 * p.greed) * (gate > 0 ? 1 + 0.8 * gate : 1);
   const offWeight = BOT_TUNING.offPlan;
 
-  let best: DiscardChoice | null = null;
+  const options: DiscardChoice[] = [];
   for (const [k, after] of byDiscard) {
     const keeps = counts.slice();
     keeps[k]--;
@@ -205,22 +215,49 @@ export function chooseDiscard(s: GameState, seat: number, p: Personality): Disca
 
     // Safety: a guarded cat eats a little speed to stop the bleeding.
     flavour -= dangerOf(k, visible) * p.caution * BOT_TUNING.danger;
+    // Tilt: the first throws after a lost hand push the risk instead of folding.
+    if (player.discards.length < 3 && p.tilt > 0.3) {
+      flavour += dangerOf(k, visible) * p.tilt * 34;
+    }
 
-    // Hold tenpai when it is worth holding.
+    // Hold tenpai when it is worth holding — and only if that tenpai can be
+    // declared at all under the table minimum.
+    const clears = gate === 0 || estimateFan(keeps, player.melds, wind, s.roundWind) >= gate;
     if (before === 0 && after > 0) flavour -= 320;
-    if (before === 0 && after === 0) flavour += 30;
+    if (before === 0 && after === 0) flavour += clears ? 30 : -180;
 
     const reason =
       after > before + 1 ? 'rebuild' :
       before === 0 && after === 0 ? 'stay ready' :
       counts[k] >= 2 ? 'break a pair' : plan.offPlan.includes(k) ? 'off plan' : 'loose tile';
 
-    if (!best || flavour > best.score || (flavour === best.score && dangerOf(k, visible) < dangerOf(best.k, visible))) {
-      best = { k, shanten: after, score: flavour, reason, plan, off };
-    }
+    options.push({ k, shanten: after, score: flavour, reason, plan, off });
   }
-  if (!best) throw new Error('no discard available');
-  return best;
+  if (!options.length) throw new Error('no discard available');
+  // lower danger first on a tie, the way the single-best loop always did
+  options.sort((a, b) => b.score - a.score || dangerOf(a.k, visible) - dangerOf(b.k, visible));
+
+  /**
+   * Sloppiness: an imperfect cat sometimes takes the second-best line.
+   *
+   * p.efficiency 1 never does; 0.5 takes it on roughly a quarter of turns. The
+   * draw is deterministic from the position, so a bot plays a given state the
+   * same way twice and the simulation suite stays reproducible.
+   */
+  const slack = (1 - p.efficiency) * 0.35;
+  if (options.length > 1 && slack > 0 && positionRandom(s, seat) < slack) return options[1];
+  return options[0];
+}
+
+/** A stable 0..1 for this exact position: same table, same line. */
+function positionRandom(s: GameState, seat: number): number {
+  let h = (s.seed ^ Math.imul(s.seq, 2654435761) ^ Math.imul(seat + 1, 40503)) >>> 0;
+  h ^= h >>> 15;
+  h = Math.imul(h, 2246822519);
+  h ^= h >>> 13;
+  h = Math.imul(h, 3266489917);
+  h ^= h >>> 16;
+  return (h >>> 0) / 4294967296;
 }
 
 export interface ClaimDecision {

@@ -2,25 +2,115 @@ import { create } from 'zustand';
 import { applyAction, createHand, claimsFor, canSelfWin, claimOptions, selfKongKinds } from '../engine/game';
 import type { ClaimType, GameAction, GameState, Personality } from '../engine/types';
 import { ARCHETYPES, decodePersonality } from '../engine/bots/personality';
-import { chooseClaim, chooseDiscard, chooseSelfKong, wantsSelfWin } from '../engine/bots/bot';
+import { chooseClaim, chooseDiscard, chooseSelfKong, dangerOf, visibleCounts, wantsSelfWin } from '../engine/bots/bot';
+import { countsOf, shantenByDiscard } from '../engine/shanten';
 import { CatAppearance, defaultCat } from './cat';
+import { designedCat } from './looks';
 import { SortMode, moveInOrder, reconcileOrder, sortHand } from './sort';
 import { sfx, setMuted as setAudioMuted, unlockAudio } from './audio';
 import { track } from './telemetry';
 import { SavedMatch, clearSavedMatch, loadSavedMatch, saveMatch } from './match';
 import {
   PlayStats,
+  ThrowContext,
   loadStats,
   saveStats,
   emptyStats,
   personalityFromStats,
   recordClaimOffer,
   recordHand,
+  recordSelfKong,
   recordThrow,
 } from './stats';
 
 /** Kept for solo play, where the player always sits East. Online, read `mySeat`. */
 export const HUMAN = 0;
+
+/**
+ * A stat change is also a profile change.
+ *
+ * The menu label and the CAT CODE always recomputed from `stats`, but the
+ * *profile* — the object `net.create/join` sends, the one a backup carries and
+ * the one a stand-in bot plays — was written once, at cat creation, and never
+ * again. So an online seat played the vector its cat was born with.
+ */
+let profileFlush: number | null = null;
+
+/** Did the last finished hand go to someone else? Drives the tilt signal. */
+let lastHandLost = false;
+export function noteHandLost(lost: boolean): void {
+  lastHandLost = lost;
+}
+
+/**
+ * Everything the record needs about one throw, measured from the table as it
+ * stood *before* the tile left the hand: how risky the tile was, how risky the
+ * safest alternative was, and whether this was the best line.
+ */
+function throwContext(game: GameState, seat: number, k: number): ThrowContext {
+  const player = game.seats[seat];
+  const counts = countsOf(player.hand);
+  const melds = player.melds.length;
+  const visible = visibleCounts(game, seat);
+  const byDiscard = shantenByDiscard(counts, melds);
+  let bestShanten = Infinity;
+  let bestDanger = Infinity;
+  for (const [kk, after] of byDiscard) {
+    if (after < bestShanten) bestShanten = after;
+    const d = dangerOf(kk, visible);
+    if (d < bestDanger) bestDanger = d;
+  }
+  const danger = dangerOf(k, visible);
+  return {
+    discardsSoFar: player.discards.length,
+    danger,
+    bestDanger: Number.isFinite(bestDanger) ? bestDanger : danger,
+    wasBest: (byDiscard.get(k) ?? 99) <= bestShanten,
+    afterLoss: lastHandLost && player.discards.length < 3,
+  };
+}
+export function commitStats(next: PlayStats): void {
+  saveStats(next);
+  useStore.setState({ stats: next });
+  const profile = useStore.getState().profile;
+  if (!profile) return;
+  useStore.setState({ profile: { ...profile, personality: personalityFromStats(next) } });
+  // one write per ~250ms: a hand fires a stat on every throw
+  if (profileFlush === null) {
+    profileFlush = window.setTimeout(() => {
+      profileFlush = null;
+      try {
+        const p = useStore.getState().profile;
+        if (p) localStorage.setItem(PROFILE_KEY, JSON.stringify(p));
+      } catch {
+        /* private mode: the record lives for this session only */
+      }
+    }, 250);
+  }
+}
+
+/**
+ * Online the server is the only writer, so a decision is only learned once the
+ * server says it happened: queue the stat by action id and commit on the ack.
+ */
+const pendingStats = new Map<string, (s: PlayStats) => PlayStats>();
+export function queueOnlineStat(id: string, produce: (s: PlayStats) => PlayStats): void {
+  // a dropped socket can leave an ack outstanding forever: keep the queue bounded
+  if (pendingStats.size > 80) {
+    const oldest = pendingStats.keys().next().value;
+    if (oldest) pendingStats.delete(oldest);
+  }
+  pendingStats.set(id, produce);
+}
+export function commitOnlineStat(id: string): void {
+  const produce = pendingStats.get(id);
+  if (!produce) return;
+  pendingStats.delete(id);
+  commitStats(produce(useStore.getState().stats));
+}
+export function dropOnlineStat(id: string): void {
+  pendingStats.delete(id);
+}
 
 export interface SeatMeta {
   name: string;
@@ -36,7 +126,7 @@ export interface Profile {
   personality: Personality;
 }
 
-export type Screen = 'menu' | 'creator' | 'table';
+export type Screen = 'menu' | 'creator' | 'table' | 'howto';
 export type PawPose = 'rest' | 'raise' | 'tap' | 'slam';
 
 interface Banner {
@@ -61,7 +151,7 @@ interface Store {
   target: 1 | 2 | 3;
   handNo: number;
   dealer: number;
-  scores: number[];
+  /** Hand wins per seat; the match is decided by these alone. */
   handWins: number[];
   game: GameState | null;
   seats: SeatMeta[];
@@ -81,8 +171,8 @@ interface Store {
   coachSeen: boolean;
   /** A solo match left mid-play; the menu offers it back instead of the player losing it. */
   savedMatch: SavedMatch | null;
-  /** The tutorial, re-opened from the menu rather than only on the first hand. */
-  coachOpen: boolean;
+  /** Where `How to play` was opened from, so Back returns there. */
+  howToFrom: Screen;
   /** True while a landscape phone is showing the rotate guard: nothing should tick. */
   rotateGuard: boolean;
   rival: { name: string; personality: Personality; cat: CatAppearance; code: string } | null;
@@ -113,8 +203,18 @@ interface Store {
   setSort: (m: SortMode) => void;
   moveTile: (from: number, to: number) => void;
   toggleMute: () => void;
+  /** Rank printed on characters-suit tiles; a preference, not a rule. */
+  numerals: boolean;
+  setNumerals: (on: boolean) => void;
+  /** Minimum doubles a hand needs to be declared in the next match. */
+  minFan: number;
+  setMinFan: (fan: number) => void;
+  /** The options sheet is a preference panel, not a screen: it can open over the table. */
+  optionsOpen: boolean;
+  openOptions: () => void;
+  closeOptions: () => void;
   nextHand: () => void;
-  /** A finished match starts over: fresh scores, same table. */
+  /** A finished match starts over: fresh win counts, same table. */
   rematch: () => void;
   /** Bring the result card back after the table has been inspected. */
   openResult: () => void;
@@ -124,7 +224,8 @@ interface Store {
   nextActor: () => number | null;
   setPaw: (p: PawPose) => void;
   dismissCoach: () => void;
-  openCoach: () => void;
+  openHowTo: () => void;
+  closeHowTo: () => void;
   setRotateGuard: (v: boolean) => void;
   closeCoach: () => void;
   /** Pick up the saved solo match exactly where it stopped. */
@@ -178,28 +279,52 @@ function loadProfile(): Profile | null {
   }
 }
 
-function loadPrefs(): { muted: boolean; sortMode: SortMode } {
+interface Prefs {
+  muted: boolean;
+  sortMode: SortMode;
+  /** Print the rank on characters-suit tiles, for players who do not read 萬. */
+  numerals: boolean;
+  /** Table minimum in doubles; 0 is "any complete hand wins", the default. */
+  minFan: number;
+}
+
+function loadPrefs(): Prefs {
+  // every field is healed against today's default: a prefs blob written before
+  // an option existed must not read as `undefined` in a control
+  const base: Prefs = { muted: false, sortMode: 'manual', numerals: false, minFan: 0 };
   try {
     const raw = localStorage.getItem(PREFS_KEY);
-    if (!raw) return { muted: false, sortMode: 'manual' };
-    const p = JSON.parse(raw) as { muted?: boolean; sortMode?: SortMode };
-    return { muted: !!p.muted, sortMode: p.sortMode ?? 'manual' };
+    if (!raw) return base;
+    const p = JSON.parse(raw) as Partial<Prefs>;
+    const gate = Number(p.minFan);
+    return {
+      muted: !!p.muted,
+      sortMode: p.sortMode ?? base.sortMode,
+      numerals: !!p.numerals,
+      // only 0-3 are real gates; anything else heals to no minimum
+      minFan: gate === 1 || gate === 2 || gate === 3 ? gate : 0,
+    };
   } catch {
-    return { muted: false, sortMode: 'manual' };
+    return base;
   }
 }
 
-function savePrefs(muted: boolean, sortMode: SortMode): void {
+function savePrefs(next: Prefs): void {
   try {
-    localStorage.setItem(PREFS_KEY, JSON.stringify({ muted, sortMode }));
+    localStorage.setItem(PREFS_KEY, JSON.stringify(next));
   } catch {
     /* storage can be denied; preferences are not worth failing over */
   }
 }
 
-/** Three different cats at the table, chosen for contrast. */
+/**
+ * Three different cats at the table, each with its own designed coat.
+ *
+ * Always archetypes: a player's published cat is invited from the cattery, never
+ * dealt. Nothing here reads the pool.
+ */
 function pickOpponents(): SeatMeta[] {
-  const ids = ['bramble', 'pip', 'mochi', 'sable', 'nine', 'olive', 'juniper', 'walnut'];
+  const ids = ARCHETYPES.map((a) => a.id);
   const shuffled = ids.slice().sort(() => Math.random() - 0.5).slice(0, 3);
   return shuffled.map((id, i) => {
     const a = ARCHETYPES.find((x) => x.id === id)!;
@@ -207,12 +332,15 @@ function pickOpponents(): SeatMeta[] {
       name: a.name,
       personality: a.personality,
       tag: a.tagline,
-      cat: opponentCat(i, id),
+      cat: botCat(i, id),
     };
   });
 }
 
-function opponentCat(i: number, id: string): CatAppearance {
+/** A named cat keeps its face; a shared cat code is hashed into one. */
+function botCat(i: number, id: string): CatAppearance {
+  const designed = designedCat(id);
+  if (designed) return designed;
   const palette = ['#c99a6b', '#8c8f95', '#3e3a38', '#fbfaf7', '#e9a06a', '#5f7f6a'];
   const pattern: CatAppearance['pattern'][] = ['tabby', 'tuxedo', 'calico', 'bicolour', 'pointed', 'spots'];
   let h = 0;
@@ -244,7 +372,6 @@ export const useStore = create<Store>((set, get) => ({
   target: 2,
   handNo: 1,
   dealer: 0,
-  scores: [0, 0, 0, 0],
   handWins: [0, 0, 0, 0],
   game: null,
   // four placeholder seats so nothing reads an undefined chair before the first deal
@@ -261,6 +388,9 @@ export const useStore = create<Store>((set, get) => ({
   keep: [],
   keepNudge: 0,
   muted: false,
+  numerals: false,
+  minFan: 0,
+  optionsOpen: false,
   banner: null,
   paw: 'rest',
   matchOver: false,
@@ -268,7 +398,7 @@ export const useStore = create<Store>((set, get) => ({
   resultDismissed: false,
   coachSeen: true,
   savedMatch: null,
-  coachOpen: false,
+  howToFrom: 'menu',
   rotateGuard: false,
   rival: null,
   lastWinSeat: null,
@@ -289,6 +419,8 @@ export const useStore = create<Store>((set, get) => ({
       stats: loadStats(),
       muted: prefs.muted,
       sortMode: prefs.sortMode,
+      numerals: prefs.numerals,
+      minFan: prefs.minFan,
       coachSeen,
       savedMatch: loadSavedMatch(),
     });
@@ -297,7 +429,7 @@ export const useStore = create<Store>((set, get) => ({
   addRival: (code, name) => {
     const p = decodePersonality(code, (name || 'Guest').trim().slice(0, 14) || 'Guest');
     if (!p) return false;
-    const cat = opponentCat(1, code.slice(0, 6) || 'guest');
+    const cat = botCat(1, code.slice(0, 6) || 'guest');
     set({ rival: { name: p.name || 'Guest', personality: p, cat, code: code.toUpperCase() } });
     return true;
   },
@@ -313,16 +445,20 @@ export const useStore = create<Store>((set, get) => ({
     set({ coachSeen: true });
   },
 
-  openCoach: () => set({ coachOpen: true }),
+  openHowTo: () => {
+    const from = get().screen;
+    set({ howToFrom: from === 'howto' ? get().howToFrom : (from as Screen), screen: 'howto' });
+  },
+
+  closeHowTo: () => set({ screen: get().howToFrom }),
 
   setRotateGuard: (v) => {
     if (get().rotateGuard !== v) set({ rotateGuard: v });
   },
 
   closeCoach: () => {
-    // the first-run coach also spends the one-shot flag; a replay does not
+    // the walkthrough is a first-run surface now; `How to play` is the full rules
     if (!get().coachSeen) get().dismissCoach();
-    set({ coachOpen: false });
   },
 
   resume: () => {
@@ -336,7 +472,6 @@ export const useStore = create<Store>((set, get) => ({
       target: m.target,
       handNo: m.handNo,
       dealer: m.dealer,
-      scores: m.scores,
       handWins: m.handWins,
       seats: m.seats,
       game: m.game,
@@ -402,7 +537,6 @@ export const useStore = create<Store>((set, get) => ({
       seats,
       handNo: 1,
       dealer: 0,
-      scores: [0, 0, 0, 0],
       handWins: [0, 0, 0, 0],
       matchOver: false,
       resultOpen: false,
@@ -414,14 +548,13 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   startHand: () => {
-    const { handNo, dealer, scores } = get();
+    const { handNo, dealer } = get();
     const game = createHand({
       seed: Math.floor(Math.random() * 2 ** 31),
       dealer,
       handNumber: handNo,
-      scores,
       bots: [false, true, true, true],
-      minFan: 0,
+      minFan: get().minFan,
     });
     set({
       game,
@@ -439,8 +572,26 @@ export const useStore = create<Store>((set, get) => ({
 
   act: (action, opts) => {
     if (get().mode === 'online') {
-      // online the server is the only writer: send the intent, let the snapshot come back
-      void import('./net').then((m) => m.net.action(action));
+      // online the server is the only writer: send the intent, let the snapshot come back.
+      // What the table learns is queued here and committed only on the server's ack,
+      // so a rejected action never teaches the cat anything.
+      const game = get().game;
+      const mine = get().mySeat;
+      let id: string | undefined;
+      if (game && action.seat === mine) {
+        const claim = action.type === 'claim' ? action.claim : null;
+        const ctx = action.type === 'discard' ? throwContext(game, mine, action.k) : null;
+        let produce: ((s: PlayStats) => PlayStats) | null = null;
+        if (action.type === 'discard' && ctx) produce = (s) => recordThrow(s, action.k, ctx);
+        else if (action.type === 'pass') produce = (s) => recordClaimOffer(s, null);
+        else if (action.type === 'kan') produce = (s) => recordSelfKong(s);
+        else if (claim && claim !== 'hu') produce = (s) => recordClaimOffer(s, claim);
+        if (produce) {
+          id = `a${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+          queueOnlineStat(id, produce);
+        }
+      }
+      void import('./net').then((m) => m.net.action(action, id));
       if (!opts?.silent) {
         if (action.type === 'discard') sfx.discard();
         else if (action.type === 'claim') sfx.claim();
@@ -472,16 +623,13 @@ export const useStore = create<Store>((set, get) => ({
 
     // what the table learns about you: only your own decisions, never a bot's
     if (action.seat === get().mySeat) {
-      const before = game.seats[get().mySeat]?.discards.length ?? 0;
+      const mine = get().mySeat;
       let learned: PlayStats | null = null;
-      if (action.type === 'discard') learned = recordThrow(get().stats, action.k, before);
+      if (action.type === 'discard') learned = recordThrow(get().stats, action.k, throwContext(game, mine, action.k));
       else if (action.type === 'pass') learned = recordClaimOffer(get().stats, null);
-      else if (action.type === 'kan') learned = recordClaimOffer(get().stats, 'kan');
+      else if (action.type === 'kan') learned = recordSelfKong(get().stats);
       else if (action.type === 'claim' && action.claim !== 'hu') learned = recordClaimOffer(get().stats, action.claim);
-      if (learned) {
-        saveStats(learned);
-        set({ stats: learned });
-      }
+      if (learned) commitStats(learned);
     }
 
     if (next.win) {
@@ -492,7 +640,6 @@ export const useStore = create<Store>((set, get) => ({
       handWins[winSeat] += 1;
       set({
         handWins,
-        scores: next.scores,
         lastWinSeat: winSeat,
         resultOpen: true,
         matchOver: handWins[winSeat] >= get().target,
@@ -504,18 +651,18 @@ export const useStore = create<Store>((set, get) => ({
           draw: false,
           fan: next.win?.score?.fan ?? 0,
         });
-        saveStats(measured);
-        set({ stats: measured });
+        commitStats(measured);
+        noteHandLost(winSeat !== get().mySeat);
         track('hand:end', { won: winSeat === get().mySeat, fan: next.win?.score?.fan ?? 0, hands: measured.hands });
         void import('./sync').then((m) => m.autoBackup());
       }
     } else if (next.drawGame) {
       sfx.lose();
-      set({ resultOpen: true, lastWinSeat: null, scores: next.scores });
+      set({ resultOpen: true, lastWinSeat: null });
       {
         const measured = recordHand(get().stats, { won: false, draw: true, fan: 0 });
-        saveStats(measured);
-        set({ stats: measured });
+        commitStats(measured);
+        noteHandLost(false); // a drawn hand is not a loss
         track('hand:end', { won: false, drawn: true, hands: measured.hands });
         void import('./sync').then((m) => m.autoBackup());
       }
@@ -582,7 +729,7 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   setSort: (m) => {
-    savePrefs(get().muted, m);
+    savePrefs({ muted: get().muted, sortMode: m, numerals: get().numerals, minFan: get().minFan });
     // Switching back to manual picks up whatever order is currently on screen.
     // Switching back to manual returns the player's own arrangement, not the
     // sorted one they were just looking at: sorting is a lens, not an edit.
@@ -600,9 +747,25 @@ export const useStore = create<Store>((set, get) => ({
     const muted = !get().muted;
     mutedState = muted;
     setAudioMuted(muted);
-    savePrefs(muted, get().sortMode);
+    savePrefs({ muted, sortMode: get().sortMode, numerals: get().numerals, minFan: get().minFan });
     set({ muted });
   },
+
+  setNumerals: (on) => {
+    savePrefs({ muted: get().muted, sortMode: get().sortMode, numerals: on, minFan: get().minFan });
+    set({ numerals: on });
+    track('pref:numerals', { on });
+  },
+
+  setMinFan: (fan) => {
+    const clean = fan === 1 || fan === 2 || fan === 3 ? fan : 0;
+    savePrefs({ muted: get().muted, sortMode: get().sortMode, numerals: get().numerals, minFan: clean });
+    set({ minFan: clean });
+    track('pref:minFan', { fan: clean });
+  },
+
+  openOptions: () => set({ optionsOpen: true }),
+  closeOptions: () => set({ optionsOpen: false }),
 
   setMode: (m) => set({ mode: m }),
 
@@ -642,7 +805,6 @@ export const useStore = create<Store>((set, get) => ({
     }
     unlockAudio();
     set({
-      scores: [0, 0, 0, 0],
       handWins: [0, 0, 0, 0],
       handNo: 1,
       dealer: 0,
@@ -788,7 +950,6 @@ if (typeof window !== 'undefined') {
         target: now.target,
         handNo: now.handNo,
         dealer: now.dealer,
-        scores: now.scores,
         handWins: now.handWins,
         seats: now.seats,
         game: now.game,

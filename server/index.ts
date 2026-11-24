@@ -23,13 +23,19 @@ import {
   eventSummary,
   loadRecentRooms,
   logEvent,
+  POOL_TTL_MS,
+  listPoolRows,
+  prunePoolRows,
   pruneProfileRows,
   pruneRooms,
+  publishPoolRow,
+  unpublishPoolRow,
   readProfileRow,
   saveProfileRow,
   saveRoom,
 } from './store';
-import { ARCHETYPES, decodePersonality } from '../src/engine/bots/personality';
+import { ARCHETYPES, decodePersonality, healPersonality } from '../src/engine/bots/personality';
+import { designedCat } from '../src/client/looks';
 import { randomBytes } from 'node:crypto';
 import type { CatAppearance } from '../src/client/cat';
 import type { GameAction, GameState, Personality } from '../src/engine/types';
@@ -56,9 +62,10 @@ type Room = {
   hostSocket: string | null;
   seats: (Seat | null)[];
   target: 1 | 2 | 3;
+  /** Table minimum in doubles, set by the host when the room is created. */
+  minFan: number;
   handNo: number;
   dealer: number;
-  scores: number[];
   handWins: number[];
   game: GameState | null;
   phase: 'lobby' | 'playing';
@@ -89,11 +96,14 @@ function newCode(): string {
   return Math.random().toString(36).slice(2, 6).toUpperCase();
 }
 
+/**
+ * An empty chair, filled on start. Archetypes only — a player's published cat is
+ * seated when someone picks it from the cattery, never silently dealt in.
+ */
 function botSeat(index: number, taken: string[] = []): Seat {
   const pool = ARCHETYPES.filter((x) => !taken.includes(x.name));
   const from = pool.length ? pool : ARCHETYPES;
   const a = from[Math.floor(Math.random() * from.length)];
-  const palette = ['#c99a6b', '#8c8f95', '#3e3a38', '#fbfaf7', '#e9a06a', '#5f7f6a', '#b8927a'];
   return {
     socketId: null,
     kind: 'bot',
@@ -101,8 +111,10 @@ function botSeat(index: number, taken: string[] = []): Seat {
     personality: a.personality,
     standIn: false,
     token: '',
-    cat: {
-      fur: palette[index % palette.length],
+    // same coat as the solo table: a bot that shows up online must not be a
+    // different cat from the one the player already knows
+    cat: designedCat(a.id) ?? {
+      fur: ['#c99a6b', '#8c8f95', '#3e3a38', '#fbfaf7', '#e9a06a', '#5f7f6a', '#b8927a'][index % 7],
       patternColor: '#2f2a28',
       pattern: (['tabby', 'tuxedo', 'calico', 'bicolour', 'pointed', 'spots'] as const)[index % 6],
       eyes: '#7bc96f',
@@ -126,7 +138,6 @@ function snapshot(room: Room) {
     target: room.target,
     handNo: room.handNo,
     dealer: room.dealer,
-    scores: room.scores,
     handWins: room.handWins,
     deadlineAt: room.deadlineAt,
     you: 0 as number, // replaced per socket
@@ -222,9 +233,9 @@ function serialise(room: Room) {
   return {
     code: room.code,
     target: room.target,
+    minFan: room.minFan,
     handNo: room.handNo,
     dealer: room.dealer,
-    scores: room.scores,
     handWins: room.handWins,
     game: room.game,
     phase: room.phase,
@@ -251,9 +262,9 @@ function rehydrate(row: { code: string; state: string }): Room | null {
       hostSocket: null,
       seats: r.seats.map((s) => (s ? { ...s, socketId: null, standIn: s.kind === 'human' } : null)),
       target: r.target,
+      minFan: r.minFan ?? 0,
       handNo: r.handNo,
       dealer: r.dealer,
-      scores: r.scores ?? [0, 0, 0, 0],
       handWins: r.handWins ?? [0, 0, 0, 0],
       game: r.game ?? null,
       phase: r.phase ?? 'lobby',
@@ -281,17 +292,8 @@ function advanceInner(room: Room, io: Server): void {
   if (!g) return;
 
   if (g.phase === 'ended') {
-    if (g.win && g.win.seat >= 0) {
-      room.handWins[g.win.seat] += 1;
-      const delta = g.win.score.points;
-      // East pays and receives double, same as the solo settle()
-      for (let s = 0; s < 4; s++) {
-        if (s === g.win.seat) continue;
-        const mult = s === room.dealer || g.win.seat === room.dealer ? 2 : 1;
-        room.scores[s] -= delta * mult;
-        room.scores[g.win.seat] += delta * mult;
-      }
-    }
+    // the match is decided by hand wins; there is no points ledger to settle
+    if (g.win && g.win.seat >= 0) room.handWins[g.win.seat] += 1;
     room.phase = 'playing';
     broadcast(room, io);
     return;
@@ -330,14 +332,13 @@ function advanceInner(room: Room, io: Server): void {
 }
 
 function startHand(room: Room, io: Server): void {
-  room.game = createHand({ dealer: room.dealer, bots: [false, true, true, true] });
+  room.game = createHand({ dealer: room.dealer, bots: [false, true, true, true], minFan: room.minFan });
   room.handNo += 1;
   advance(room, io);
 }
 
-/** A finished match starts over: same table, fresh scores. */
+/** A finished match starts over: same table, fresh win counts. */
 function restartMatch(room: Room, io: Server): void {
-  room.scores = [0, 0, 0, 0];
   room.handWins = [0, 0, 0, 0];
   room.handNo = 0;
   room.dealer = 0;
@@ -435,15 +436,29 @@ app.post('/profile', (req, res) => {
 app.post('/beacon', (req, res) => {
   const ip = req.ip ?? 'unknown';
   if (!writeAllowed(ip)) return res.status(429).end();
-  const body = req.body as { session?: string; events?: { name?: string; at?: number; props?: unknown }[] } | undefined;
+  const body = req.body as
+    | { session?: string; build?: string; probe?: boolean; events?: { name?: string; at?: number; props?: unknown }[] }
+    | undefined;
   const session = String(body?.session ?? '').slice(0, 40);
+  const build = String(body?.build ?? '').slice(0, 24);
+  const probe = body?.probe === true;
   const events = Array.isArray(body?.events) ? body!.events.slice(0, 40) : [];
   if (!session) return res.status(400).end();
   for (const e of events) {
     const name = String(e?.name ?? '').slice(0, 40);
     if (!name) continue;
     const at = Number(e?.at);
-    logEvent(session, name, Number.isFinite(at) && at > 0 ? at : Date.now(), e?.props ?? null);
+    // every row carries the build it came from, so a crash can be pinned to a
+    // diff, and `probe` keeps audit-forced crashes out of the real signal
+    const props: Record<string, unknown> =
+      e?.props && typeof e.props === 'object' && !Array.isArray(e.props)
+        ? { ...(e.props as Record<string, unknown>) }
+        : e?.props == null
+          ? {}
+          : { value: e.props };
+    if (build) props.build = build;
+    if (probe) props.probe = true;
+    logEvent(session, name, Number.isFinite(at) && at > 0 ? at : Date.now(), props);
   }
   res.status(204).end();
 });
@@ -454,6 +469,47 @@ app.get('/stats/summary', (req, res) => {
   if (!token || req.query.key !== token) return res.status(404).end();
   const days = Math.min(90, Math.max(1, Number(req.query.days ?? 7)));
   res.json({ since: days, events: eventSummary(Date.now() - days * 24 * 60 * 60_000) });
+});
+
+/**
+ * The cattery: opt-in player cats.
+ *
+ * Publishing is keyed by the sync code so the publisher can take the cat down
+ * again, but the public list never returns that code — only an opaque id and
+ * what a bot needs to play.
+ */
+app.post('/pool/publish', (req, res) => {
+  const ip = req.ip ?? 'unknown';
+  if (!writeAllowed(ip)) return res.status(429).json({ error: 'Too many publishes. Try again in a minute.' });
+  const body = req.body as { code?: string; name?: string; cat?: unknown; personality?: unknown } | undefined;
+  // backup codes are five characters; accept six so a future length is not a cliff
+  const code = String(body?.code ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+  if (code.length < 5) return res.status(400).json({ error: 'Publish from a saved cat.' });
+  const name = String(body?.name ?? '').replace(/[\u0000-\u001f]/g, '').trim().slice(0, 14);
+  if (!name) return res.status(400).json({ error: 'That cat needs a name.' });
+  if (!body?.cat || typeof body.cat !== 'object') return res.status(400).json({ error: 'That cat is not a cat.' });
+  const personality = healPersonality(body.personality, name);
+  const size = Buffer.byteLength(JSON.stringify(body.cat), 'utf8');
+  if (size > 4096) return res.status(413).json({ error: 'That cat is too large.' });
+  const id = publishPoolRow(code, { name, cat: body.cat, personality });
+  res.json({ id });
+});
+
+app.post('/pool/unpublish', (req, res) => {
+  const code = String((req.body as { code?: string } | undefined)?.code ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+  if (code.length < 5) return res.status(400).json({ error: 'Which cat?' });
+  res.json({ removed: unpublishPoolRow(code) });
+});
+
+app.get('/pool', (req, res) => {
+  const n = Math.min(24, Math.max(1, Number(req.query.n ?? 12) || 12));
+  const rows = listPoolRows();
+  // a rotating shortlist, not a leaderboard: shuffle then take n
+  for (let i = rows.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [rows[i], rows[j]] = [rows[j], rows[i]];
+  }
+  res.json({ cats: rows.slice(0, n), total: rows.length });
 });
 
 app.get('/profile/:code', (req, res) => {
@@ -511,16 +567,21 @@ io.on('connection', (socket: Socket) => {
     fn(room, at.seat);
   }
 
-  socket.on('room:create', (p: { profile: { name: string; cat: CatAppearance; personality: Personality }; target?: 1 | 2 | 3 }) => {
+  socket.on('room:create', (p: {
+    profile: { name: string; cat: CatAppearance; personality: Personality };
+    target?: 1 | 2 | 3;
+    minFan?: number;
+  }) => {
     const code = newCode();
     const room: Room = {
       code,
       hostSocket: socket.id,
       seats: [null, null, null, null],
       target: p.target ?? 2,
+      // a forged or stale client can send anything; only 0-3 are real gates
+      minFan: p.minFan === 1 || p.minFan === 2 || p.minFan === 3 ? p.minFan : 0,
       handNo: 0,
       dealer: 0,
-      scores: [0, 0, 0, 0],
       handWins: [0, 0, 0, 0],
       game: null,
       phase: 'lobby',
@@ -536,7 +597,8 @@ io.on('connection', (socket: Socket) => {
       kind: 'human',
       name: p.profile.name || 'Cat',
       cat: p.profile.cat,
-      personality: p.profile.personality,
+      // a seat is played by a bot when the player drops: it must be a real vector
+      personality: healPersonality(p.profile.personality, p.profile.name),
       standIn: false,
       token,
     };
@@ -564,7 +626,8 @@ io.on('connection', (socket: Socket) => {
       kind: 'human',
       name: p.profile.name || 'Cat',
       cat: p.profile.cat,
-      personality: p.profile.personality,
+      // a seat is played by a bot when the player drops: it must be a real vector
+      personality: healPersonality(p.profile.personality, p.profile.name),
       standIn: false,
       token,
     };
@@ -603,7 +666,6 @@ io.on('connection', (socket: Socket) => {
       // bots auto-fill any empty seat, per the brief
       for (let s = 0; s < 4; s++) if (!room.seats[s]) room.seats[s] = botSeat(s, room.seats.map((x) => x?.name ?? ''));
       room.phase = 'playing';
-      room.scores = [0, 0, 0, 0];
       room.handWins = [0, 0, 0, 0];
       room.handNo = 0;
       room.dealer = 0;
@@ -622,18 +684,33 @@ io.on('connection', (socket: Socket) => {
     });
   });
 
-  socket.on('room:action', (action: GameAction) => {
+  /**
+   * An action, and whether it happened.
+   *
+   * The client learns a cat's style from its own decisions, but online the client
+   * is not the writer — so it queues a statistic and commits it only when the
+   * server says the action was accepted. `id` is that handshake.
+   */
+  socket.on('room:action', (payload: { id?: string; action?: GameAction } | GameAction) => {
+    const wrapped = payload as { id?: string; action?: GameAction };
+    const id = typeof wrapped?.id === 'string' ? wrapped.id : undefined;
+    const action = (wrapped?.action ?? payload) as GameAction;
+    const reject = (why?: string) => {
+      if (id) send('room:rejected', { id });
+      if (why) send('room:error', why);
+    };
     withRoom((room, seat) => {
-      if (room.phase !== 'playing' || !room.game) return;
-      if (room.game.phase === 'ended') return;
-      if (action.seat !== seat) return send('room:error', 'That is not your seat.');
-      if (isBotSeat(room, seat)) return;
+      if (room.phase !== 'playing' || !room.game) return reject();
+      if (room.game.phase === 'ended') return reject();
+      if (action?.seat !== seat) return reject('That is not your seat.');
+      if (isBotSeat(room, seat)) return reject();
       try {
         room.game = applyAction(room.game, action);
       } catch (err) {
-        send('room:error', err instanceof Error ? err.message : 'Illegal action');
+        reject(err instanceof Error ? err.message : 'Illegal action');
         return;
       }
+      if (id) send('room:applied', { id });
       advance(room, io);
     });
   });
@@ -719,6 +796,7 @@ io.on('connection', (socket: Socket) => {
 // ---- restart recovery ----
 pruneRooms(Date.now() - ROOM_TTL_MS);
 pruneProfileRows(Date.now() - PROFILE_TTL_MS);
+prunePoolRows(Date.now() - POOL_TTL_MS);
 let restored = 0;
 for (const row of loadRecentRooms(Date.now() - ROOM_TTL_MS)) {
   const room = rehydrate(row);

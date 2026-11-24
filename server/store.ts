@@ -98,6 +98,63 @@ export function readProfileRow(code: string): unknown | null {
   }
 }
 
+/* ------------------------------------------------------------------------ *
+ * The cattery: player cats other players can meet.
+ *
+ * Opt-in, one row per cat, keyed by the sync code so it can be unpublished with
+ * the same code that published it. Nothing here carries stats, score or the sync
+ * code itself: the pool hands out an opaque id and the four things a bot needs.
+ * ------------------------------------------------------------------------ */
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS pool (
+    id          TEXT PRIMARY KEY,
+    code        TEXT NOT NULL UNIQUE,
+    updated_at  INTEGER NOT NULL,
+    name        TEXT NOT NULL,
+    cat         TEXT NOT NULL,
+    personality TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS pool_updated ON pool (updated_at);
+`);
+
+const putPool = db.prepare(
+  `INSERT INTO pool (id, code, updated_at, name, cat, personality) VALUES (?, ?, ?, ?, ?, ?)
+   ON CONFLICT(code) DO UPDATE SET updated_at = excluded.updated_at, name = excluded.name,
+     cat = excluded.cat, personality = excluded.personality`,
+);
+const dropPool = db.prepare('DELETE FROM pool WHERE code = ?');
+const getPoolByCode = db.prepare('SELECT id FROM pool WHERE code = ?');
+const listPool = db.prepare('SELECT id, name, cat, personality FROM pool ORDER BY updated_at DESC LIMIT 400');
+const prunePool = db.prepare('DELETE FROM pool WHERE updated_at < ?');
+
+export const POOL_TTL_MS = 90 * 24 * 60 * 60_000;
+export const POOL_MAX = 400;
+
+export function publishPoolRow(code: string, entry: { name: string; cat: unknown; personality: unknown }): string {
+  const existing = getPoolByCode.get(code) as { id: string } | undefined;
+  const id = existing?.id ?? Math.random().toString(36).slice(2, 8).toUpperCase();
+  putPool.run(id, code, Date.now(), entry.name, JSON.stringify(entry.cat), JSON.stringify(entry.personality));
+  return id;
+}
+
+export function unpublishPoolRow(code: string): boolean {
+  return dropPool.run(code).changes > 0;
+}
+
+export function listPoolRows(): { id: string; name: string; cat: unknown; personality: unknown }[] {
+  return (listPool.all() as { id: string; name: string; cat: string; personality: string }[]).map((r) => ({
+    id: r.id,
+    name: r.name,
+    cat: JSON.parse(r.cat),
+    personality: JSON.parse(r.personality),
+  }));
+}
+
+export function prunePoolRows(before: number): number {
+  return prunePool.run(before).changes;
+}
+
 export function pruneProfileRows(before: number): number {
   return pruneProfiles.run(before).changes;
 }

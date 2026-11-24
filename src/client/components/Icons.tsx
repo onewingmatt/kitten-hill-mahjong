@@ -36,6 +36,18 @@ export function IconMute({ size = 18, className }: P) {
   );
 }
 
+/** Options: three sliders, because a gear reads as "settings app" not "a few switches". */
+export function IconSliders({ size = 18, className }: P) {
+  return (
+    <svg {...base(size)} className={className} aria-hidden="true">
+      <path d="M4 7h6M14 7h6M4 12h10M18 12h2M4 17h3M11 17h9" />
+      <circle cx="12" cy="7" r="2" />
+      <circle cx="16" cy="12" r="2" />
+      <circle cx="9" cy="17" r="2" />
+    </svg>
+  );
+}
+
 export function IconClose({ size = 18, className }: P) {
   return (
     <svg {...base(size)} className={className} aria-hidden="true">

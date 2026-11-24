@@ -2,7 +2,7 @@ import type { ClaimType, GameAction, GameState, LogEntry, Meld, PlayerState, Win
 import { BONUS_END, BONUS_START, isBonus, kind, spriteUrl } from './tiles';
 import { countsOf } from './shanten';
 import { isWinningCounts, winningKinds } from './win';
-import { DEFAULT_LIMIT, scoreHand, settle } from './score';
+import { DEFAULT_LIMIT, scoreHand } from './score';
 
 /* ------------------------------------------------------------------ */
 /* RNG                                                                 */
@@ -45,7 +45,6 @@ export interface HandOptions {
   dealer?: number;
   roundWind?: number;
   handNumber?: number;
-  scores?: number[];
   bots?: boolean[];
   limit?: number;
   minFan?: number;
@@ -83,7 +82,6 @@ export function createHand(opts: HandOptions = {}): GameState {
     lastDrawSeat: null,
     win: null,
     log: [],
-    scores: opts.scores ?? [0, 0, 0, 0],
     handNumber: opts.handNumber ?? 1,
     seq: 0,
     drawGame: false,
@@ -459,11 +457,15 @@ function doSelfKong(s: GameState, seat: number, k: number): void {
     pung.tiles = [k, k, k, k];
     pung.added = true;
     const j = p.hand.indexOf(k);
-    if (j >= 0) p.hand.splice(j, 1);
+    // `splice(-1, 1)` removes the LAST tile, so a missing copy must fail loudly
+    if (j < 0) throw new IllegalAction('kong tile missing from hand');
+    p.hand.splice(j, 1);
     log(s, { seat, type: 'kan', k, text: `${seatName(seat)} adds to the kong of ${kind(k).label}` });
   } else {
     for (let i = 0; i < 4; i++) {
       const j = p.hand.indexOf(k);
+      // never splice(-1): that silently throws away the wrong tile
+      if (j < 0) throw new IllegalAction('kong tile missing from hand');
       p.hand.splice(j, 1);
     }
     p.melds.push({ type: 'kong', k, concealed: true, from: null, tiles: [k, k, k, k] });
@@ -502,9 +504,6 @@ function finishHand(s: GameState, seat: number, winKind: number, from: number | 
     minFan: s.minFan,
   }, winKind);
 
-  const gains = settle(seat, score.points, s.limit, s.dealer);
-  s.scores = s.scores.map((v, i) => v + gains[i]);
-
   s.win = {
     seat,
     from,
@@ -522,7 +521,7 @@ function finishHand(s: GameState, seat: number, winKind: number, from: number | 
     seat,
     type: 'win',
     k: winKind,
-    text: `${seatName(seat)} wins ${selfDraw ? 'on the draw' : `on ${seatName(from!)}'s discard`} — ${score.points} points`,
+    text: `${seatName(seat)} wins ${selfDraw ? 'on the draw' : `on ${seatName(from!)}'s discard`} — ${score.fan} fan`,
   });
 }
 

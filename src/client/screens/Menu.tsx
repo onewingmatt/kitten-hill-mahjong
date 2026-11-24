@@ -5,6 +5,7 @@ import { IconClose } from '../components/Icons';
 import { encodePersonality, playStyleLabel } from '../../engine/bots/personality';
 import { personalityFromStats } from '../stats';
 import { BackupSheet } from './BackupSheet';
+import { Cattery } from './Cattery';
 import { sfx } from '../audio';
 import { useDialog } from '../useDialog';
 import { IconMute, IconSound } from '../components/Icons';
@@ -25,7 +26,8 @@ export function Menu() {
     savedMatch,
     resume,
     dropSaved,
-    openCoach,
+    openHowTo,
+    openOptions,
   } = useStore();
   const [choice, setChoice] = React.useState<1 | 2 | 3>(target);
   const [copied, setCopied] = React.useState(false);
@@ -33,7 +35,18 @@ export function Menu() {
   const [codeInput, setCodeInput] = React.useState('');
   const [codeError, setCodeError] = React.useState(false);
   const [nameInput, setNameInput] = React.useState('');
+  const [rivalOpen, setRivalOpen] = React.useState(false);
+  const rivalAddRef = React.useRef<HTMLButtonElement>(null);
   const [askNew, setAskNew] = React.useState(false);
+  const [catteryOpen, setCatteryOpen] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!rivalOpen || rival) return;
+    const frame = window.requestAnimationFrame(() => {
+      rivalAddRef.current?.scrollIntoView({ behavior: 'auto', block: 'end' });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [rivalOpen, rival]);
 
   React.useEffect(() => {
     boot();
@@ -61,7 +74,7 @@ export function Menu() {
   };
 
   return (
-    <div className="screen">
+    <div className="screen screen--menu">
       <button className="icon-btn screen__corner" aria-label={muted ? 'Unmute' : 'Mute'} onClick={toggleMute}>
         {muted ? <IconMute /> : <IconSound />}
       </button>
@@ -101,9 +114,11 @@ export function Menu() {
               {profile && stats.hands > 0 && ` · ${stats.hands} hand${stats.hands === 1 ? '' : 's'}, ${stats.wins} won`}
             </div>
           </div>
-          <button className="btn btn--ghost btn--sm" onClick={() => go('creator')}>
-            {profile ? 'Edit' : 'Create'}
-          </button>
+          {profile && (
+            <button className="btn btn--ghost btn--sm" onClick={() => go('creator')}>
+              Edit
+            </button>
+          )}
         </div>
 
         {profile && (
@@ -134,9 +149,9 @@ export function Menu() {
           </div>
           <div className="row resume__row">
             <span className="resume__sub">
-              You {savedMatch.scores[savedMatch.mySeat] ?? 0} –{' '}
-              {Math.max(...savedMatch.scores.filter((_, i) => i !== savedMatch.mySeat))}{' '}
-              {bestRivalName(savedMatch.seats, savedMatch.mySeat, savedMatch.scores)}
+              You {savedMatch.handWins[savedMatch.mySeat] ?? 0} –{' '}
+              {Math.max(...savedMatch.handWins.filter((_, i) => i !== savedMatch.mySeat))}{' '}
+              {bestRivalName(savedMatch.seats, savedMatch.mySeat, savedMatch.handWins)}
             </span>
             <button className="btn btn--primary" style={{ height: 44, padding: '0 14px' }} onClick={resume}>
               Resume
@@ -164,109 +179,134 @@ export function Menu() {
       )}
 
       <button
-        className={`btn ${savedMatch ? 'btn--ghost' : 'btn--primary'}`}
+        className={`btn ${savedMatch ? 'btn--ghost' : 'btn--primary'} menu__create`}
         style={{ height: 52, fontSize: 16, marginTop: 2 }}
-        onClick={() => (savedMatch ? setAskNew(true) : sit())}
-        disabled={!profile}
+        onClick={() => {
+          if (!profile) {
+            sfx.ui();
+            go('creator');
+          } else if (savedMatch) {
+            setAskNew(true);
+          } else {
+            sit();
+          }
+        }}
       >
-        {!profile ? 'Create your cat first' : savedMatch ? 'Start a new match' : 'Sit down'}
+        {!profile ? 'Create a cat' : savedMatch ? 'Start a new match' : 'Sit down'}
       </button>
 
       <button
-        className="btn btn--ghost"
+        className="btn btn--ghost btn--outline menu__online"
         style={{ height: 44 }}
         onClick={() => { sfx.ui(); useStore.getState().enterLobby(); }}
         disabled={!profile}
+        aria-describedby={!profile ? 'menu-online-note' : undefined}
       >
         Play online · rooms
       </button>
+      {!profile && <p className="menu__disabled-note" id="menu-online-note">Create a cat before playing online.</p>}
 
-      <div className="card">
-        <h2>Face a cat</h2>
+      <div className="card menu__rival">
         {rival ? (
-          <div className="row" style={{ gap: 10 }}>
-            <div className="seat__badge" style={{ width: 40, height: 40, borderColor: 'var(--seat-1)' }}>
-              <CatFace cat={rival.cat} />
-            </div>
-            <div className="grow">
-              <div style={{ fontFamily: 'var(--font-display)', fontSize: 16 }}>{rival.name}</div>
-              <div style={{ fontSize: 10.5, color: 'rgba(248,240,225,.6)' }}>
-                seated · {playStyleLabel(rival.personality)}
-              </div>
-            </div>
-            <button className="icon-btn" aria-label="Remove this cat" onClick={clearRival}>
-              <IconClose size={14} />
-            </button>
-          </div>
-        ) : (
           <>
-            <input
-              className="input"
-              value={codeInput}
-              onChange={(e) => {
-                setCodeInput(e.target.value.toUpperCase());
-                setCodeError(false);
-              }}
-              placeholder="CAT CODE"
-              spellCheck={false}
-              autoComplete="off"
-              aria-label="Cat code"
-            />
-            <div className="row" style={{ gap: 8, marginTop: 8 }}>
-              <input
-                className="input input--name"
-                value={nameInput}
-                onChange={(e) => setNameInput(e.target.value.slice(0, 14))}
-                placeholder="CAT'S NAME"
-                spellCheck={false}
-                autoComplete="off"
-                aria-label="Cat name"
-              />
-              <button
-                className="btn btn--ghost btn--sm"
-                onClick={() => {
-                  if (!codeInput.trim()) return;
-                  const ok = addRival(codeInput, nameInput.trim() || 'Guest');
-                  setCodeError(!ok);
-                  if (ok) {
-                    sfx.claim();
-                    setCodeInput('');
-                    setNameInput('');
-                  }
-                }}
-              >
-                Add
+            <h2>Face a cat</h2>
+            <div className="row" style={{ gap: 10 }}>
+              <div className="seat__badge" style={{ width: 40, height: 40, borderColor: 'var(--seat-1)' }}>
+                <CatFace cat={rival.cat} />
+              </div>
+              <div className="grow">
+                <div style={{ fontFamily: 'var(--font-display)', fontSize: 16 }}>{rival.name}</div>
+                <div style={{ fontSize: 10.5, color: 'rgba(248,240,225,.6)' }}>
+                  seated · {playStyleLabel(rival.personality)}
+                </div>
+              </div>
+              <button className="icon-btn" aria-label="Remove this cat" onClick={clearRival}>
+                <IconClose size={14} />
               </button>
             </div>
-            <p style={{ margin: '8px 0 0', fontSize: 11, lineHeight: 1.5, color: codeError ? 'var(--coral)' : 'rgba(248,240,225,.55)' }}>
-              {codeError
-                ? 'That code is not 11 characters — check it and try again.'
-                : 'Paste a friend’s cat code and their cat sits at your table, playing the way they do.'}
-            </p>
+          </>
+        ) : (
+          <>
+            <button
+              type="button"
+              className="menu__rival-toggle"
+              aria-label="Face a cat"
+              aria-expanded={rivalOpen}
+              aria-controls="menu-rival-form"
+              onClick={() => setRivalOpen((open) => !open)}
+            >
+              <span className="menu__rival-copy">
+                <span className="menu__rival-title">Face a cat</span>
+                <span className="menu__rival-subtitle">Add a friend’s cat by code</span>
+              </span>
+              <span className="menu__rival-mark" aria-hidden="true">{rivalOpen ? '−' : '+'}</span>
+            </button>
+            <div id="menu-rival-form" className="menu__rival-form" hidden={!rivalOpen}>
+              <input
+                className="input"
+                value={codeInput}
+                onChange={(e) => {
+                  setCodeInput(e.target.value.toUpperCase());
+                  setCodeError(false);
+                }}
+                placeholder="CAT CODE"
+                spellCheck={false}
+                autoComplete="off"
+                aria-label="Cat code"
+              />
+              <div className="row" style={{ gap: 8, marginTop: 8 }}>
+                <input
+                  className="input input--name"
+                  value={nameInput}
+                  onChange={(e) => setNameInput(e.target.value.slice(0, 14))}
+                  placeholder="CAT'S NAME"
+                  spellCheck={false}
+                  autoComplete="off"
+                  aria-label="Cat name"
+                />
+                <button
+                  ref={rivalAddRef}
+                  className="btn btn--ghost btn--sm"
+                  style={{ height: 42 }}
+                  onClick={() => {
+                    if (!codeInput.trim()) return;
+                    const ok = addRival(codeInput, nameInput.trim() || 'Guest');
+                    setCodeError(!ok);
+                    if (ok) {
+                      sfx.claim();
+                      setCodeInput('');
+                      setNameInput('');
+                    }
+                  }}
+                >
+                  Add
+                </button>
+              </div>
+              {codeError && (
+                <p className="menu__code-error" role="status">
+                  That code is not 11 characters — check it and try again.
+                </p>
+              )}
+            </div>
           </>
         )}
       </div>
 
-      <div className="card">
-        <h2>How you win</h2>
-        <div className="hint">
-          <span style={{ fontFamily: 'var(--font-display)', fontSize: 15, color: 'var(--gold)' }}>東</span>
-          <span>
-            Four sets and a pair. Chinese Classical: 144 tiles, 13 in hand, flowers set aside for bonus
-            points. Any completed hand wins — doubles like a flush, a dragon pung or your own wind
-            multiply the payout, and the counter under your hand tracks what it's worth.
-          </span>
-        </div>
-      </div>
-
       <div className="grow" />
       <div className="menu__foot">
-        <button className="menu__footlink" onClick={() => { sfx.ui(); openCoach(); }}>
+        <button className="menu__footlink" onClick={() => { sfx.ui(); openHowTo(); }}>
           How to play
+        </button>
+        <button className="menu__footlink" onClick={() => { sfx.ui(); openOptions(); }}>
+          Options
+        </button>
+        <button className="menu__footlink" onClick={() => { sfx.ui(); setCatteryOpen(true); }} disabled={!profile}>
+          The cattery
         </button>
         <span className="menu__version">KITTEN HILL · v1.0</span>
       </div>
           {backupOpen && <BackupSheet onClose={() => setBackupOpen(false)} />}
+      {catteryOpen && <Cattery mode="solo" onClose={() => setCatteryOpen(false)} />}
       {askNew && (
         <StartOverDialog
           onKeep={() => setAskNew(false)}
@@ -280,17 +320,17 @@ export function Menu() {
   );
 }
 
-/** Whoever is closest to you, so the line says whose score that is. */
+/** Whoever is closest to you, so the line says whose wins those are. */
 function bestRivalName(
   seats: { name: string }[],
   mySeat: number,
-  scores: number[],
+  wins: number[],
 ): string {
   let best = -1;
-  let score = -Infinity;
-  scores.forEach((sc, i) => {
-    if (i !== mySeat && sc > score) {
-      score = sc;
+  let most = -Infinity;
+  wins.forEach((w, i) => {
+    if (i !== mySeat && w > most) {
+      most = w;
       best = i;
     }
   });

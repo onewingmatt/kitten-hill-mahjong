@@ -133,7 +133,6 @@ export interface GameState {
   seed: number;
   win: WinInfo | null;
   log: LogEntry[];
-  scores: number[];
   handNumber: number;
   /** Monotonic counter used for animation sequencing on the client. */
   seq: number;
@@ -167,4 +166,10 @@ export interface Personality {
   limitHunter: number;
   /** 0..1 — tilts after big losses (worse decisions for a hand). */
   tilt: number;
+  /**
+   * 0..1 — how often the cat takes the best discard available. 1 is flawless,
+   * 0.5 is roughly a quarter of turns taking the second-best line. This is the
+   * only axis that changes the *quality* of a bot's play, not just its taste.
+   */
+  efficiency: number;
 }

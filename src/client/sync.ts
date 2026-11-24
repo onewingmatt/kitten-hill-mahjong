@@ -6,6 +6,7 @@
  */
 import { useStore } from './store';
 import { STATS_KEY, healStats } from './stats';
+import { healPersonality } from '../engine/bots/personality';
 import { defaultCat, type CatAppearance } from './cat';
 import type { Profile } from './net';
 
@@ -90,6 +91,8 @@ export async function restoreFrom(code: string): Promise<Profile> {
     ...profile,
     name: typeof profile.name === 'string' && profile.name.trim() ? profile.name.slice(0, 14) : 'Cat',
     cat: { ...defaultCat(), ...((profile.cat ?? {}) as CatAppearance) },
+    // a v1 backup carries a vector the v2 bot reads fields from
+    personality: healPersonality(profile.personality, profile.name),
   };
   const healedStats = healStats(data.profile?.stats);
   try {

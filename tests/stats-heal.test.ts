@@ -27,7 +27,7 @@ describe('healStats', () => {
     expect(healed.winFan).toEqual([3, 5]);
   });
 
-  it('passes a real record through untouched', () => {
+  it('passes a full v2 record through untouched', () => {
     const real = {
       hands: 9,
       wins: 3,
@@ -37,7 +37,27 @@ describe('healStats', () => {
       claims: { chi: 2, pon: 3, kan: 1 },
       earlyHonourDumps: 4,
       winFan: [3, 6, 9],
+      dangerAccepted: 18.4,
+      dangerAvailable: 11.2,
+      efficientThrows: 61,
+      scoredThrows: 72,
+      kongs: 2,
+      postLossThrows: 9,
+      postLossDanger: 4.1,
     };
     expect(healStats(real)).toEqual(real);
+  });
+
+  it('fills a v1 record with neutral v2 counters rather than zeroes', () => {
+    const v1 = { hands: 9, wins: 3, draws: 2, throwsBySuit: [12, 8, 5, 3], claimOffers: 11, claims: { chi: 2, pon: 3, kan: 1 }, earlyHonourDumps: 4, winFan: [3, 6, 9] };
+    const healed = healStats(v1);
+    expect(healed.dangerAvailable).toBe(0);
+    expect(healed.scoredThrows).toBe(0);
+    expect(healed.hands).toBe(9);
+    // unmeasured ratios must read neutral, not "reckless"
+    const style = personalityFromStats(healed);
+    expect(style.caution).toBeCloseTo(0.5, 5);
+    expect(style.efficiency).toBeCloseTo(0.9, 5);
+    expect(style.tilt).toBeCloseTo(0.2, 5);
   });
 });

@@ -17,16 +17,15 @@ const STEPS = [
   {
     icon: IconTrophy,
     title: 'Winning',
-    body: 'Four sets and a pair. A flush, a dragon pung or your own wind each double the payout, and spare flowers score on top. Watch for READY: it means one tile finishes you.',
+    body: 'Four sets and a pair. A flush, a dragon pung or your own wind each add a fan — that is what a hand is worth here. Watch for READY: it means one tile finishes you.',
   },
 ];
 
 /** First-hand walkthrough. Shown once, then remembered. */
 export function Coach() {
-  // closeCoach spends the one-shot flag on the first run and only closes the
-  // panel on a replay from the menu
+  // the walkthrough is a first-run surface: closing it spends the one-shot flag
+  // and it unmounts. The full rules live behind How to play on the menu.
   const close = useStore((s) => s.closeCoach);
-  const onTable = useStore((s) => s.screen === 'table');
   const card = useDialog(close);
   const [step, setStep] = React.useState(0);
   const Icon = STEPS[step].icon;
@@ -64,8 +63,7 @@ export function Coach() {
             className="btn btn--primary grow"
             onClick={() => (last ? close() : setStep(step + 1))}
           >
-            {/* "Deal me in" is a lie when the panel was opened from the menu */}
-            {last ? (onTable ? 'Deal me in' : 'Got it') : 'Next'}
+            {last ? 'Deal me in' : 'Next'}
           </button>
         </div>
       </div>

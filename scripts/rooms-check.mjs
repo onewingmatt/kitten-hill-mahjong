@@ -154,7 +154,7 @@ try {
   await new Promise((r) => setTimeout(r, 1200));
   const afterRestart = await room(code);
   check('the table survives a restart', afterRestart && afterRestart.code === code, `handNo ${afterRestart?.handNo}`);
-  check('the hand number and scores are intact', afterRestart.handNo === beforeRestart.handNo);
+  check('the hand number and win counts are intact', afterRestart.handNo === beforeRestart.handNo);
   check('play resumes after the restart', afterRestart.seq > beforeRestart.seq, `seq ${beforeRestart.seq} → ${afterRestart.seq}`);
 
   /* 6. and the chair is still claimable afterwards */

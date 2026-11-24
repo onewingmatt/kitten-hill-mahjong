@@ -70,6 +70,124 @@ const browser = await chromium.launch({ executablePath: '/usr/bin/google-chrome-
   await ctx.close();
 }
 
+/* 1b. the menu foot opens the full rules, and every section actually explains something */
+{
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 1, isMobile: true, hasTouch: true });
+  const page = await ctx.newPage();
+  const errs = []; page.on('pageerror', (e) => errs.push(e.message));
+  await page.goto(process.argv[2] ?? 'http://localhost:4180/', { waitUntil: 'networkidle' });
+  await page.evaluate((p) => { localStorage.clear(); localStorage.setItem('khm.coach.v1', 'done'); localStorage.setItem('khm.profile.v1', p); }, PROFILE);
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.getByRole('button', { name: 'How to play' }).click();
+  await page.waitForTimeout(400);
+  const doc = await page.evaluate(() => {
+    const cards = [...document.querySelectorAll('.howto__card')];
+    const sc = document.querySelector('.howto__scroll');
+    sc.scrollTop = sc.scrollHeight;
+    const last = cards.at(-1).getBoundingClientRect();
+    const reach = last.bottom <= sc.getBoundingClientRect().bottom + 1;
+    sc.scrollTop = 0;
+    return {
+      open: !!document.querySelector('.screen--howto'),
+      coach: !!document.querySelector('.coach'),
+      cards: cards.length,
+      titles: cards.map((c) => (c.querySelector('h2')?.textContent || '').replace(/^\d+/, '').trim()),
+      // a card is a section only if it says more than its heading
+      thin: cards.filter((c) => (c.innerText || '').replace(c.querySelector('h2')?.textContent || '', '').trim().length < 60).length,
+      figures: document.querySelectorAll('.howto__card .tile').length,
+      reach,
+    };
+  });
+  await page.getByRole('button', { name: 'Got it' }).click();
+  await page.waitForTimeout(350);
+  const back = await page.evaluate(() => !!document.querySelector('.screen--menu') && !document.querySelector('.screen--howto'));
+  check('howto:opens-from-menu', doc.open && !doc.coach, `${doc.cards} sections`);
+  check('howto:every-section-explains', doc.cards >= 8 && doc.thin === 0, `${doc.titles.length} headings, ${doc.thin} thin`);
+  check('howto:illustrated', doc.figures >= 13, `${doc.figures} tile art`);
+  check('howto:last-section-reachable', doc.reach, 'scrolled to the end');
+  check('howto:closes-to-menu', back, 'Got it returns to the menu');
+  check('howto:no-errors', errs.length === 0, errs.slice(0, 2).join(' | '));
+  await ctx.close();
+}
+
+/* 1b2. a solo hand teaches the cat: the record moves AND the profile carries it */
+{
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 1, isMobile: true, hasTouch: true });
+  const page = await ctx.newPage();
+  const errs = []; page.on('pageerror', (e) => errs.push(e.message));
+  await page.goto(process.argv[2] ?? 'http://localhost:4180/', { waitUntil: 'networkidle' });
+  await page.evaluate((p) => { localStorage.clear(); localStorage.setItem('khm.coach.v1', 'done'); localStorage.setItem('khm.profile.v1', p); }, PROFILE);
+  await page.reload({ waitUntil: 'networkidle' });
+  const learned = await page.evaluate(async () => {
+    const S = () => window.__khm.getState();
+    S().startMatch(3);
+    const before = S().stats.hands;
+    const t0 = Date.now();
+    while (S().stats.hands === before && Date.now() - t0 < 20_000) {
+      const s = S();
+      const g = s.game;
+      if (!g) break;
+      if (g.phase === 'ended') { s.nextHand(); continue; }
+      const mine = s.mySeat ?? 0;
+      if (g.phase === 'claim' && g.pendingSeats.includes(mine) && !g.claimResponses[mine]) s.act({ type: 'pass', seat: mine });
+      else if (g.phase === 'discard' && g.turn === mine) {
+        const hand = g.seats[mine].hand;
+        if (hand.length) s.act({ type: 'discard', seat: mine, k: hand[hand.length - 1] });
+      } else s.stepBot();
+      await new Promise((r) => setTimeout(r, 8));
+    }
+    await new Promise((r) => setTimeout(r, 500));
+    const stats = S().stats;
+    const saved = JSON.parse(localStorage.getItem('khm.profile.v1') || 'null');
+    const live = window.__khmLearn?.personalityFromStats(stats) ?? null;
+    return {
+      hands: stats.hands,
+      throws: stats.throwsBySuit.reduce((a, b) => a + b, 0),
+      saved: saved?.personality ?? null,
+      live,
+      code: saved !== null && live ? window.__khmLearn.encodePersonality(saved.personality) : null,
+    };
+  });
+  const same = learned.saved && learned.live && JSON.stringify(learned.saved) === JSON.stringify(learned.live);
+  check('learn:solo-hand-recorded', learned.hands > 0 && learned.throws > 0, `${learned.hands} hands, ${learned.throws} throws`);
+  check('learn:profile-carries-the-vector', same, same ? learned.code : `saved ${JSON.stringify(learned.saved)} live ${JSON.stringify(learned.live)}`);
+  check('learn:no-errors', errs.length === 0, errs.slice(0, 2).join(' | '));
+  await ctx.close();
+}
+
+/* 1c. a rack index that outlives its hand must not crash the table.
+   Online, `applyRoomState` replaces the hand without going through `act()`, so a
+   raised tile could point past the end of the new rack; the raise chip then called
+   spriteUrl(undefined) and the whole screen fell to the crash page. */
+{
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 1, isMobile: true, hasTouch: true });
+  const page = await ctx.newPage();
+  const errs = []; page.on('pageerror', (e) => errs.push(e.message));
+  await page.goto(process.argv[2] ?? 'http://localhost:4180/', { waitUntil: 'networkidle' });
+  await page.evaluate((p) => { localStorage.clear(); localStorage.setItem('khm.coach.v1', 'done'); localStorage.setItem('khm.profile.v1', p); }, PROFILE);
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.getByRole('button', { name: 'Sit down' }).click();
+  await page.waitForTimeout(2600);
+  const out = await page.evaluate(() => {
+    const S = window.__khm.getState();
+    const g = S.game;
+    // raise the last tile of the rack, then hand back a shorter rack, as a snapshot would
+    const short = { ...g, seats: g.seats.map((s, i) => (i === 0 ? { ...s, hand: s.hand.slice(0, 10) } : s)) };
+    window.__khm.setState({ mode: 'online', game: short, selected: 13 });
+    return { hand: g.seats[0].hand.length };
+  });
+  await page.waitForTimeout(500);
+  const after = await page.evaluate(() => ({
+    crash: !!document.querySelector('.crash'),
+    detail: document.querySelector('.crash__detail')?.textContent ?? null,
+    rack: document.querySelectorAll('.dock__hand .tile').length,
+    chip: !!document.querySelector('.shape-tiles'),
+  }));
+  check('rack:stale-index-is-harmless', !after.crash && after.rack > 0, `rack ${after.rack}, chip ${after.chip}${after.detail ? ' — ' + after.detail : ''}`);
+  check('rack:stale-index-no-errors', errs.length === 0, errs.slice(0, 2).join(' | '));
+  await ctx.close();
+}
+
 /* 2. keeping a tile safe, then discarding it */
 {
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 1, isMobile: true, hasTouch: true });
@@ -205,6 +323,72 @@ const browser = await chromium.launch({ executablePath: '/usr/bin/google-chrome-
   }));
   check('crash:renders', crash.shown && !crash.blank, `title "${crash.title}"`);
   check('crash:offers-recovery', crash.reload && crash.fresh, 'reload + start fresh');
+  await ctx.close();
+}
+
+/* 6. options: the two preferences that change how the table reads */
+{
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 1, isMobile: true, hasTouch: true });
+  const page = await ctx.newPage();
+  const errs = []; page.on('pageerror', (e) => errs.push(e.message));
+  await page.goto(process.argv[2] ?? 'http://localhost:4180/', { waitUntil: 'networkidle' });
+  await page.evaluate((p) => { localStorage.clear(); localStorage.setItem('khm.profile.v1', p); localStorage.setItem('khm.coach.v1', 'done'); }, PROFILE);
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.waitForTimeout(600);
+
+  const menuEntry = await page.getByRole('button', { name: 'Options' }).count();
+  await page.getByRole('button', { name: 'Options' }).first().click();
+  await page.waitForTimeout(400);
+  const sheet = await page.evaluate(() => {
+    const card = document.querySelector('.options');
+    if (!card) return null;
+    const r = card.getBoundingClientRect();
+    return {
+      rows: document.querySelectorAll('.opt').length,
+      fits: r.right <= innerWidth + 1 && r.bottom <= innerHeight + 1,
+      pills: [...document.querySelectorAll('.opt__pills .pill')].map((n) => n.textContent.trim()),
+      numeralsOn: [...document.querySelectorAll('.opt')].find((n) => /Numbers on character/.test(n.textContent))?.querySelector('.is-on')?.textContent.trim(),
+    };
+  });
+  check('options:opens-from-menu', menuEntry === 1 && !!sheet, sheet ? `${sheet.rows} rows, fits ${sheet.fits}` : 'no sheet');
+  check('options:offers-a-table-minimum', (sheet?.pills ?? []).join('|') === 'None|1 fan|2 fan|3 fan', (sheet?.pills ?? []).join('|'));
+  check('options:defaults-to-no-minimum', sheet?.pills?.[0] === 'None' && sheet?.numeralsOn === 'Off', `numerals ${sheet?.numeralsOn}`);
+
+  // turn the numerals on and set a 2-fan minimum
+  await page.locator('.opt__pills').getByRole('button', { name: '2 fan' }).click();
+  await page.locator('.opt').filter({ hasText: 'Numbers on character tiles' }).getByRole('button', { name: 'On' }).click();
+  await page.waitForTimeout(250);
+  await page.getByRole('button', { name: 'Close options' }).click();
+  await page.waitForTimeout(250);
+  await page.getByRole('button', { name: /Sit down|Start a new match/ }).first().click();
+  await page.waitForTimeout(2200);
+
+  const painted = await page.evaluate(() => {
+    const app = document.querySelector('.app');
+    const tiles = [...document.querySelectorAll('.tile[data-num]')];
+    const ok = tiles.filter((t) => getComputedStyle(t, '::before').content.replace(/"/g, '') === t.getAttribute('data-num'));
+    const nonChar = [...document.querySelectorAll('.tile:not([data-num])')].length;
+    return {
+      classOn: !!app?.classList.contains('has-numerals'),
+      chars: tiles.length,
+      painted: ok.length,
+      nonChars: nonChar,
+      firstSize: tiles[0] ? parseFloat(getComputedStyle(tiles[0], '::before').fontSize) : 0,
+    };
+  });
+  check('options:numerals-paint-the-rank', painted.classOn && painted.chars > 0 && painted.painted === painted.chars,
+    `${painted.painted}/${painted.chars} characters tiles printed, ${painted.nonChars} honours untouched`);
+  check('options:numeral-type-floor', painted.firstSize >= 10, `${painted.firstSize}px`);
+
+  const gate = await page.evaluate(() => ({ minFan: window.__khm.getState().game?.minFan, hand: window.__khm.getState().game?.seats[0].hand.length }));
+  check('options:minimum-reaches-the-deal', gate.minFan === 2 && (gate.hand ?? 0) >= 13, `game.minFan ${gate.minFan}, hand ${gate.hand}`);
+
+  // a reload must keep both preferences
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.waitForTimeout(1500);
+  const kept = await page.evaluate(() => ({ numerals: window.__khm.getState().numerals, minFan: window.__khm.getState().minFan }));
+  check('options:prefs-survive-a-reload', kept.numerals === true && kept.minFan === 2, JSON.stringify(kept));
+  check('options:no-errors', errs.length === 0, errs.slice(0, 2).join(' | '));
   await ctx.close();
 }
 

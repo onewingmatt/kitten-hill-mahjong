@@ -20,7 +20,14 @@ export class ErrorBoundary extends React.Component<{ children: React.ReactNode }
   componentDidCatch(error: Error, info: React.ErrorInfo) {
     // keep the stack for QA; the shipped surface stays calm
     console.error('Kitten Hill crashed', error, info.componentStack);
-    void import('./telemetry').then((m) => m.track('crash', { message: String(error.message).slice(0, 160) }));
+    // the message alone does not say where: the component stack is what makes
+    // the next crash report actionable
+    void import('./telemetry').then((m) =>
+      m.track('crash', {
+        message: String(error.message).slice(0, 160),
+        stack: String(info.componentStack ?? '').replace(/\s+/g, ' ').trim().slice(0, 400),
+      }),
+    );
   }
 
   private reload = () => {
@@ -45,7 +52,7 @@ export class ErrorBoundary extends React.Component<{ children: React.ReactNode }
       <div className="screen crash" role="alert">
         <h1 className="crash__title">The table tipped over</h1>
         <p className="crash__body">
-          Something went wrong on this screen. Your cats and scores are still on this device.
+          Something went wrong on this screen. Your cats and their wins are still on this device.
         </p>
         <pre className="crash__detail">{this.state.error.message}</pre>
         <div className="crash__actions">

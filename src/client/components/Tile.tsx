@@ -1,5 +1,5 @@
 import React from 'react';
-import { kind, spriteUrl } from '../../engine/tiles';
+import { kind, rankOf, spriteUrl } from '../../engine/tiles';
 import type { Meld } from '../../engine/types';
 
 interface TileProps {
@@ -30,6 +30,13 @@ export function Tile({ k, className = '', style, raised, drawn, staticSize, dim,
     .filter(Boolean)
     .join(' ');
   const img = <img src={spriteUrl(k)} alt={def.label} draggable={false} loading="eager" decoding="async" />;
+  /*
+   * Characters-suit tiles carry their rank as a Chinese numeral over 萬, which is
+   * unreadable to anyone who has not learned it. The rank rides on the element as
+   * a data attribute and the Options switch reveals it in CSS, so toggling never
+   * re-renders the rack — and a tile's DOM is identical either way.
+   */
+  const numeral = k >= 18 && k <= 26 ? rankOf(k) : undefined;
   if (onClick || onPointerDown) {
     return (
       <button
@@ -40,13 +47,14 @@ export function Tile({ k, className = '', style, raised, drawn, staticSize, dim,
         onPointerDown={onPointerDown}
         title={title ?? def.label}
         aria-label={def.label}
+        data-num={numeral}
       >
         {img}
       </button>
     );
   }
   return (
-    <div className={cls} style={style} title={title ?? def.label} role="img" aria-label={def.label}>
+    <div className={cls} style={style} title={title ?? def.label} role="img" aria-label={def.label} data-num={numeral}>
       {img}
     </div>
   );

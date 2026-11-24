@@ -241,24 +241,6 @@ export function scoreHand(concealed: number[], melds: Meld[], ctx: ScoreContext,
   };
 }
 
-/**
- * Old-style Chinese Classical payout: every other player pays the winner.
- * Winner never pays; East pays and receives double. Each payment is capped at
- * the table limit.
- */
-export function settle(winner: number, points: number, limit = DEFAULT_LIMIT, eastSeat = 0): number[] {
-  const gains = [0, 0, 0, 0];
-  const capped = Math.min(points, limit);
-  for (let s = 0; s < 4; s++) {
-    if (s === winner) continue;
-    const mul = (s === eastSeat ? 2 : 1) * (winner === eastSeat ? 2 : 1);
-    const pay = Math.min(limit, capped * mul);
-    gains[winner] += pay;
-    gains[s] -= pay;
-  }
-  return gains;
-}
-
 /** Bonus tiles are never part of a hand: they sit aside and score. */
 export function isBonusKind(k: number): boolean {
   return isBonus(k);

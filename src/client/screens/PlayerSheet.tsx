@@ -14,7 +14,7 @@ const WIND_GLYPH = ['東', '南', '西', '北'];
  * tiles stay face down even here.
  */
 export function PlayerSheet({ seat, onClose }: { seat: number; onClose: () => void }) {
-  const { game, seats, scores, handWins, target, dealer, mySeat } = useStore();
+  const { game, seats, handWins, target, dealer, mySeat } = useStore();
   const dialog = useDialog(onClose, { modal: false });
   if (!game) return null;
 
@@ -52,8 +52,8 @@ export function PlayerSheet({ seat, onClose }: { seat: number; onClose: () => vo
               )}
             </div>
             <div className="sheet__score">
-              <b>{scores[seat] > 0 ? `+${scores[seat]}` : scores[seat]}</b>
-              <span>pts</span>
+              <b>{handWins[seat]}</b>
+              <span>of {target} won</span>
               <span className="pips" aria-label={`${handWins[seat]} of ${target} hands`}>
                 {Array.from({ length: target }).map((_, i) => (
                   <span key={i} className={`pip ${i < handWins[seat] ? 'is-on' : ''}`} />

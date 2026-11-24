@@ -18,17 +18,13 @@ import {
 import { personalityFromStats } from '../stats';
 import { useStore } from '../store';
 import { sfx } from '../audio';
+import { pickPlayerName } from '../names';
 import { useDialog } from '../useDialog';
-
-const CAT_NAMES = [
-  'Biscuit', 'Marmalade', 'Toast', 'Pebble', 'Nori', 'Clementine', 'Miso', 'Hazel',
-  'Pumpkin', 'Sable', 'Pickle', 'Waffle', 'Clove', 'Fig', 'Mochi', 'Taro', 'Olive', 'Poppy',
-];
 
 export function Creator() {
   const { profile, saveProfile, go, stats } = useStore();
   const [cat, setCat] = React.useState<CatAppearance>(profile?.cat ?? defaultCat(Math.floor(Math.random() * 999)));
-  const [name, setName] = React.useState(profile?.name ?? CAT_NAMES[Math.floor(Math.random() * CAT_NAMES.length)]);
+  const [name, setName] = React.useState(profile?.name ?? pickPlayerName());
   /** a name the player typed is theirs: "Surprise me" must not overwrite it */
   const [nameTouched, setNameTouched] = React.useState(false);
   /** remembered so the collar toggle can put the colour back */
@@ -107,7 +103,7 @@ export function Creator() {
       seed: Math.floor(Math.random() * 9999),
     });
     // a generated name is a placeholder; a typed one is a decision
-    if (!nameTouched) setName(pick(CAT_NAMES));
+    if (!nameTouched) setName(pickPlayerName());
   };
 
   const save = () => {
@@ -158,18 +154,21 @@ export function Creator() {
 
       <div className="grow creator__scroll" ref={scrollRef} onScroll={trackSection}>
         <div className="card creator" ref={el => { cards.current[0] = el; }}>
-          <h2>Coat</h2>
-          <div className="swatches">
-            {FUR_COLORS.map((c) => (
-              <button
-                key={c}
-                className={`swatch ${cat.fur === c ? 'is-on' : ''}`}
-                style={{ background: c }}
-                aria-label={`fur ${c}`}
-                aria-pressed={cat.fur === c}
-                onClick={() => patch({ fur: c })}
-              />
-            ))}
+          <h2 className="sr-only">Coat</h2>
+          <div className="creator__field creator__coat-colour">
+            <h3>Coat colour</h3>
+            <div className="swatches">
+              {FUR_COLORS.map((c) => (
+                <button
+                  key={c}
+                  className={`swatch ${cat.fur === c ? 'is-on' : ''}`}
+                  style={{ background: c }}
+                  aria-label={`fur ${c}`}
+                  aria-pressed={cat.fur === c}
+                  onClick={() => patch({ fur: c })}
+                />
+              ))}
+            </div>
           </div>
 
           <div className="creator__field">
@@ -225,7 +224,7 @@ export function Creator() {
         </div>
 
         <div className="card creator" ref={el => { cards.current[1] = el; }}>
-          <h2>Eyes</h2>
+          <h2 className="sr-only">Eyes</h2>
           <div className="swatches">
             {EYE_COLORS.map((c) => (
               <button
@@ -256,7 +255,7 @@ export function Creator() {
         </div>
 
         <div className="card creator" ref={el => { cards.current[2] = el; }}>
-          <h2>Build</h2>
+          <h2 className="sr-only">Build</h2>
           <Slider
             label="Size"
             value={cat.size}
@@ -285,7 +284,7 @@ export function Creator() {
 
         <div className="card creator" ref={el => { cards.current[3] = el; }}>
           <div className="row row--between">
-            <h2>Collar</h2>
+            <h2 className="sr-only">Collar</h2>
             <div className="segmented" role="group" aria-label="Collar">
               <button
                 className={cat.collar ? '' : 'is-on'}

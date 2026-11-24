@@ -36,7 +36,7 @@ const roster = ARCHETYPES.slice(0, 4).map((a) => a.personality);
 let wins = 0, draws = 0, stalls = 0;
 const fanHist: Record<number, number> = {};
 const seatWins = [0, 0, 0, 0];
-const seatPoints = [0, 0, 0, 0];
+
 const t0 = Date.now();
 
 for (let seed = 1; seed <= N; seed++) {
@@ -50,7 +50,6 @@ for (let seed = 1; seed <= N; seed++) {
     fanHist[end.win.score.fan] = (fanHist[end.win.score.fan] ?? 0) + 1;
     seatWins[end.win.seat]++;
   } else draws++;
-  end.scores.forEach((v, i) => { seatPoints[i] += v; });
 }
 
 console.log(JSON.stringify({
@@ -58,7 +57,6 @@ console.log(JSON.stringify({
   winRate: +(wins / N).toFixed(3),
   fanHist,
   seatWins,
-  seatPointsPerHand: seatPoints.map((v) => +(v / N).toFixed(1)),
   roster: roster.map((p) => p.name),
   ms: Date.now() - t0,
 }, null, 2));

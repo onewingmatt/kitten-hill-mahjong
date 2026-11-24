@@ -21,7 +21,6 @@ export function ResultOverlay() {
   const {
     game,
     seats,
-    scores,
     handWins,
     target,
     matchOver,
@@ -37,9 +36,10 @@ export function ResultOverlay() {
 
   const win = game.win;
   const youWon = win?.seat === mySeat;
-  const standings = scores
-    .map((score, seat) => ({ seat, score, wins: handWins[seat] }))
-    .sort((a, b) => b.score - a.score || b.wins - a.wins);
+  // the match is decided by hand wins: there is no points column to sort by
+  const standings = handWins
+    .map((wins, seat) => ({ seat, wins }))
+    .sort((a, b) => b.wins - a.wins || a.seat - b.seat);
 
   const ranked = competitionRanks(standings);
 
@@ -60,11 +60,9 @@ export function ResultOverlay() {
       : "The wall runs dry";
 
   const subject = win ? win.seat : -1;
-  // medals rank the table, so a draw where nobody scored must not hand out
+  // medals rank the table, so a draw where nobody won must not hand out
   // gold/silver/bronze next to four identical zeroes
-  const tiedTable = standings.every(
-    (s) => s.score === standings[0].score && s.wins === standings[0].wins,
-  );
+  const tiedTable = standings.every((s) => s.wins === standings[0].wins);
   const dialog = useDialog(closeResult);
 
   return (
@@ -116,9 +114,8 @@ export function ResultOverlay() {
           </h2>
           {win ? (
             <div className="result__points">
-              +{win.score.points}
+              {win.score.fan} fan
               <small>
-                {win.score.fan} fan ·{" "}
                 {win.selfDraw
                   ? "self drawn"
                   : `off ${seats[win.from ?? 0]?.name}`}
@@ -158,25 +155,23 @@ export function ResultOverlay() {
           <div>
             <h2 className="card-label">How it scored</h2>
             <div className="ledger">
-              <div className="ledger__row">
-                <span>Base points</span>
-                <b>{win.score.miniPoints} pts</b>
-              </div>
               {win.score.doubles.map((d, i) => (
                 <div className="ledger__row" key={i}>
                   <span>{d.label}</span>
-                  <b>×2{d.value > 1 ? ` (${d.value})` : ""}</b>
+                  <b>
+                    +{d.value > 1 ? d.value : 1} fan
+                  </b>
                 </div>
               ))}
               {win.score.doubles.length === 0 && (
                 <div className="ledger__row">
-                  <span>No doubles — a chicken hand</span>
-                  <b>×1</b>
+                  <span>No doubles — a plain hand</span>
+                  <b>0 fan</b>
                 </div>
               )}
               <div className="ledger__row ledger__row--total">
-                <span>Paid by the table</span>
-                <b>{win.score.points} pts</b>
+                <span>Worth</span>
+                <b>{win.score.fan} fan</b>
               </div>
             </div>
           </div>
@@ -205,13 +200,9 @@ export function ResultOverlay() {
                 </div>
                 <div className="standing__name">
                   {seats[s.seat]?.name ?? "Cat"}
-                  <span className="standing__tag">
-                    {WIND_GLYPH[seatWind(s.seat, dealer)]} · {s.wins}W
-                  </span>
+                  <span className="standing__tag">{WIND_GLYPH[seatWind(s.seat, dealer)]}</span>
                 </div>
-                <span className="standing__score">
-                  {s.score > 0 ? `+${s.score}` : s.score}
-                </span>
+                <span className="standing__score">{s.wins}W</span>
               </div>
             ))}
           </div>

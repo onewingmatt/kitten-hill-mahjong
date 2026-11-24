@@ -6,6 +6,8 @@ import { Lobby } from './screens/Lobby';
 import { Game } from './Game';
 import { Announcer } from './Announcer';
 import { Coach } from './screens/Coach';
+import { HowTo } from './screens/HowTo';
+import { OptionsDialog } from './screens/Options';
 import './styles.css';
 
 // Exposed for QA probes: the live store is the fastest way to read table state.
@@ -16,11 +18,23 @@ declare global {
 }
 if (typeof window !== 'undefined') window.__khm = useStore;
 
+// QA hook: the learned vector as the app computes it, so a probe can compare the
+// stored profile and the CAT CODE against the record without re-deriving the maths.
+if (typeof window !== 'undefined') {
+  void Promise.all([import('./stats'), import('../engine/bots/personality')]).then(([stats, bot]) => {
+    (window as unknown as Record<string, unknown>).__khmLearn = {
+      personalityFromStats: stats.personalityFromStats,
+      playStyleLabel: bot.playStyleLabel,
+      encodePersonality: bot.encodePersonality,
+    };
+  });
+}
+
 export function App() {
   const screen = useStore((s) => s.screen);
   const boot = useStore((s) => s.boot);
   const coachSeen = useStore((s) => s.coachSeen);
-  const coachOpen = useStore((s) => s.coachOpen);
+  const optionsOpen = useStore((s) => s.optionsOpen);
   const setRotateGuard = useStore((s) => s.setRotateGuard);
 
   /* A phone held sideways cannot show this table: the felt collapsed to 2px and
@@ -42,9 +56,21 @@ export function App() {
   return (
     <>
       <Announcer />
-      {screen === 'lobby' ? <Lobby /> : screen === 'creator' ? <Creator /> : screen === 'table' ? <Game /> : <Menu />}
-      {/* first run: over the table it is explaining. Any later time: whoever asked for it. */}
-      {(coachOpen || (screen === 'table' && !coachSeen)) && <Coach />}
+      {screen === 'lobby' ? (
+        <Lobby />
+      ) : screen === 'creator' ? (
+        <Creator />
+      ) : screen === 'table' ? (
+        <Game />
+      ) : screen === 'howto' ? (
+        <HowTo />
+      ) : (
+        <Menu />
+      )}
+      {/* first run only: the full rules live behind `How to play` on the menu */}
+      {screen === 'table' && !coachSeen && <Coach />}
+      {/* preferences, not rules: opens over the table without pausing anything */}
+      {optionsOpen && <OptionsDialog />}
       <RotateGuard />
     </>
   );

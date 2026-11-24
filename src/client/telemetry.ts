@@ -6,6 +6,17 @@
  * every page load and never stored, so two visits cannot be joined into a person.
  * Do Not Track is honoured by not sending anything at all.
  */
+/** Injected by vite.config.ts: the commit this bundle was built from. */
+declare const __BUILD__: string;
+const BUILD = typeof __BUILD__ === 'string' ? __BUILD__ : 'unknown';
+/**
+ * Playwright/WebDriver sets `navigator.webdriver`. The audits force the crash
+ * boundary on purpose, and those rows used to be indistinguishable from a real
+ * player hitting the same screen — flag them at the source.
+ */
+const PROBE =
+  typeof navigator !== 'undefined' && (navigator as { webdriver?: boolean }).webdriver === true;
+
 const session =
   typeof crypto !== 'undefined' && 'randomUUID' in crypto
     ? crypto.randomUUID()
@@ -20,7 +31,7 @@ const optedOut = (): boolean =>
 function flush(beacon = false): void {
   if (queue.length === 0) return;
   const events = queue.splice(0, queue.length);
-  const body = JSON.stringify({ session, events });
+  const body = JSON.stringify({ session, build: BUILD, probe: PROBE, events });
   if (beacon && typeof navigator.sendBeacon === 'function') {
     navigator.sendBeacon('/beacon', new Blob([body], { type: 'application/json' }));
     return;

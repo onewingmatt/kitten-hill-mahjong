@@ -4,15 +4,17 @@ import { net } from '../net';
 import { CatFace } from '../cat';
 import { playStyleLabel } from '../../engine/bots/personality';
 import { IconClose, IconPaw } from '../components/Icons';
+import { Cattery } from './Cattery';
 
 /**
  * Room lobby: create a table, share the code, let bots fill the chairs, start.
  * Once the server says the hand is live the store flips the screen to the table.
  */
 export function Lobby() {
-  const { profile, roomCode, seats, mySeat, online, roomError, leave, target } = useStore();
+  const { profile, roomCode, seats, mySeat, online, roomError, leave, target, minFan } = useStore();
   const [joinCode, setJoinCode] = React.useState('');
   const [catCode, setCatCode] = React.useState('');
+  const [catteryOpen, setCatteryOpen] = React.useState(false);
   const [length, setLength] = React.useState<1 | 2 | 3>(target);
 
   if (!profile) {
@@ -58,7 +60,7 @@ export function Lobby() {
               </button>
             ))}
           </div>
-          <button className="btn btn--primary" style={{ height: 46 }} onClick={() => net.create(profile, length)}>
+          <button className="btn btn--primary" style={{ height: 46 }} onClick={() => net.create(profile, length, minFan)}>
             Create room
           </button>
         </div>
@@ -171,6 +173,10 @@ export function Lobby() {
             Seat
           </button>
         </div>
+        <button className="btn btn--ghost btn--sm" style={{ marginTop: 8 }} onClick={() => setCatteryOpen(true)}>
+          Browse the cattery
+        </button>
+        {catteryOpen && <Cattery mode="room" onClose={() => setCatteryOpen(false)} />}
       </div>
 
       {roomError && (

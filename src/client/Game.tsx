@@ -4,6 +4,8 @@ import { Tile, TileBack, Melds, Flowers } from './components/Tile';
 import { CatFace, CatPaw } from './cat';
 import { estimateFan, fanBreakdown, type FanLine } from '../engine/bots/fan-estimate';
 import { countsOf } from '../engine/shanten';
+import { driverKey } from './driver';
+import { kindAt } from './focus';
 import { afterEachDiscard, blockByKind, decompose, describe as describeShape, distanceToReady } from '../engine/shape';
 import { kind, spriteUrl } from '../engine/tiles';
 import { ResultOverlay } from './screens/Result';
@@ -13,17 +15,14 @@ import { claimOptions, currentWaits } from '../engine/game';
 import { LogSheet } from './screens/LogSheet';
 import { sfx } from './audio';
 import { useDialog } from './useDialog';
-import { IconClose, IconExpand, IconLock, IconLog, IconMute, IconPause, IconPlay, IconSound, IconSparkle, IconTrophy } from './components/Icons';
+import type { SortMode } from './sort';
+import { IconClose, IconExpand, IconLock, IconLog, IconMute, IconPause, IconPlay, IconSliders, IconSound, IconSparkle, IconTrophy } from './components/Icons';
 
 const WIND_GLYPH = ['東', '南', '西', '北'];
 
 /** Relative position around the table: 0 = you, 1 = right, 2 = across, 3 = left. */
 function rel(seat: number, mySeat: number): number {
   return (seat - mySeat + 4) % 4;
-}
-
-function money(n: number): string {
-  return n > 0 ? `+${n}` : `${n}`;
 }
 
 export function Game() {
@@ -33,7 +32,6 @@ export function Game() {
     dealer,
     handNo,
     target,
-    scores,
     handWins,
     sortMode,
     myOrder,
@@ -55,6 +53,8 @@ export function Game() {
     humanKong,
     setSort,
     toggleMute,
+    numerals,
+    openOptions,
     leave,
     say,
     mySeat,
@@ -76,6 +76,7 @@ export function Game() {
   /* the fan counter explains itself on demand: a phone has no hover, so the
      `title` it used to carry reached nobody */
   const [fanOpen, setFanOpen] = React.useState(false);
+  const [sortMoreOpen, setSortMoreOpen] = React.useState(false);
   /* the X in the HUD used to drop the hand on the first tap, from the corner
      where a thumb rests. Leaving mid-hand asks first; leaving a finished hand
      does not, because there is nothing left to lose. */
@@ -94,19 +95,22 @@ export function Game() {
   }, [handNo, reducedMotion]);
 
   /* ---- bot driver: one action per tick, with a beat between plays ---- */
-  const lastSeq = React.useRef<number>(-1);
+  const lastStep = React.useRef<string>('');
   React.useEffect(() => {
     if (mode === 'online') return;
     if (!game || game.phase === 'ended') return;
     if (userPaused || logOpen || rotateGuard) {
       // clear the marker so the same position can step again once play resumes
-      lastSeq.current = -1;
+      lastStep.current = '';
       return;
     }
     const actor = nextActor();
     if (actor === null || actor === mySeat) return;
-    if (lastSeq.current === game.seq) return;
-    lastSeq.current = game.seq;
+    // A claim answer does not log, so `seq` alone cannot tell one silent pass
+    // from another: see driverKey.
+    const key = driverKey(game);
+    if (lastStep.current === key) return;
+    lastStep.current = key;
     const delay = 380 + Math.random() * 320;
     const id = window.setTimeout(() => stepBot(), delay);
     return () => window.clearTimeout(id);
@@ -123,17 +127,17 @@ export function Game() {
   const CLAIM_MS = 15000;
   const [claimLeft, setClaimLeft] = React.useState(CLAIM_MS);
   React.useEffect(() => {
-    if (!waiting || logOpen || rotateGuard) return;
+    if (!waiting || logOpen || rotateGuard || sortMoreOpen) return;
     const start = Date.now();
     setClaimLeft(CLAIM_MS);
     const id = window.setInterval(() => setClaimLeft(Math.max(0, CLAIM_MS - (Date.now() - start))), 100);
     return () => window.clearInterval(id);
-  }, [waiting, game?.seq, logOpen, rotateGuard]);
+  }, [waiting, game?.seq, logOpen, rotateGuard, sortMoreOpen]);
   React.useEffect(() => {
-    if (mode === 'online' || !waiting || userPaused || logOpen || rotateGuard) return;
+    if (mode === 'online' || !waiting || userPaused || logOpen || rotateGuard || sortMoreOpen) return;
     const id = window.setTimeout(() => humanPass(), CLAIM_MS);
     return () => window.clearTimeout(id);
-  }, [waiting, game?.seq, humanPass, mode, userPaused, logOpen, rotateGuard]);
+  }, [waiting, game?.seq, humanPass, mode, userPaused, logOpen, rotateGuard, sortMoreOpen]);
 
   /* ---- online: the bar renders the server's clock, not a local guess ---- */
   const [nowMs, setNowMs] = React.useState(() => Date.now());
@@ -179,7 +183,8 @@ export function Game() {
   const blocks = decompose(myHand);
   const shaped = blockByKind(blocks);
   const away = distanceToReady(myHand, meldCount);
-  const focusKind = selected !== null ? display[selected] : null;
+  // a snapshot or a resume can shrink the rack under a raised tile: no index, no focus
+  const focusKind = kindAt(display, selected);
   const focusBlock = focusKind !== null ? shaped.get(focusKind) : undefined;
   const focusLine = focusKind !== null ? describeShape(blocks, focusKind) : null;
   /* a lone tile can be marked safe too, so the mark follows the tile, not the block */
@@ -194,6 +199,7 @@ export function Game() {
       : away <= 0 ? 'ready' : `${away} away`;
 
   const wallPct = Math.max(0, Math.min(1, game.wall.length / 90));
+  const moreSortActive = sortMode === 'rank' || sortMode === 'sets';
 
   /* ---- who just did what: drive the opponent paws and callouts off the log ---- */
   const [flash, setFlash] = React.useState<{ seat: number; type: string; id: number } | null>(null);
@@ -294,12 +300,13 @@ export function Game() {
   };
 
   return (
-    <div className="app app--enter" key={`hand-${handNo}`}>
+    <div className={`app app--enter${numerals ? ' has-numerals' : ''}`} key={`hand-${handNo}`}>
       <Hud
         handNo={handNo}
         target={target}
         muted={muted}
         onMute={toggleMute}
+        onOptions={openOptions}
         onLeave={() => (ended ? leave() : setLeaveAsk(true))}
         wind={myWind}
         wall={game.wall.length}
@@ -327,7 +334,6 @@ export function Game() {
             dealer={dealer}
             game={game}
             meta={seats[seat]}
-            scores={scores}
             wins={handWins}
             pose={poseFor(seat)}
             callout={calloutFor(seat)}
@@ -341,15 +347,16 @@ export function Game() {
           <div className="felt__compass" aria-hidden="true">{WIND_GLYPH[game.roundWind]}</div>
           <div className="wall" aria-label={`${game.wall.length} tiles left in the wall`}>
             <div className="wall__ring" style={{ ['--left' as string]: wallPct.toFixed(3) }} aria-hidden="true">
-              <i className="wall__seg wall__seg--n" />
-              <i className="wall__seg wall__seg--e" />
-              <i className="wall__seg wall__seg--s" />
-              <i className="wall__seg wall__seg--w" />
+              {(['n', 'e', 's', 'w'] as const).map((side) => (
+                <div key={side} className={`wall__seg wall__seg--${side}`}>
+                  {Array.from({ length: 4 }).map((_, i) => <i key={i} className="wall__tile" />)}
+                </div>
+              ))}
               <span className="wall__core" />
             </div>
             <div className="wall__count">
               {game.wall.length}
-              <small>left</small>
+              <small>tiles</small>
             </div>
           </div>
 
@@ -383,7 +390,7 @@ export function Game() {
             <div className="claimbar__btns">
               {myClaims.find((c) => c.type === 'hu') && (
                 <button className="btn btn--primary" onClick={humanHu}>
-                  Hu · {myClaims.find((c) => c.type === 'hu')!.points}
+                  Hu · {myClaims.find((c) => c.type === 'hu')!.fan} fan
                 </button>
               )}
               {myClaims.find((c) => c.type === 'kan') && (
@@ -424,8 +431,9 @@ export function Game() {
               <span className="seat__name">{seats[mySeat]?.name ?? 'You'}</span>
               <span className="seat__meta">
                 <span className="wind-disc" style={{ ['--seat' as string]: 'var(--seat-0)' }}>{WIND_GLYPH[myWind]}</span>
-                <span key={scores[mySeat]} className="seat__score score-pop">{money(scores[mySeat])}</span>
-                <span>· {handWins[mySeat]}/{target}</span>
+                <span key={handWins[mySeat]} className="seat__wins score-pop">
+                  {handWins[mySeat]}/{target} wins
+                </span>
               </span>
             </div>
           </div>
@@ -457,17 +465,31 @@ export function Game() {
         <div className="row" style={{ minHeight: 22 }}>
           <Melds melds={game.seats[mySeat].melds} />
           <div className="grow" />
-          <div className="segmented" role="group" aria-label="Sort hand">
-            {(['manual', 'suit', 'rank', 'sets', 'smart'] as const).map((m) => (
-              <button
-                key={m}
-                className={sortMode === m ? 'is-on' : ''}
-                onClick={() => setSort(m)}
-                aria-label={m === 'smart' ? 'Smart: by suit, with sets and runs grouped' : undefined}
-              >
-                {m === 'manual' ? 'Mine' : m === 'suit' ? 'Suit' : m === 'rank' ? 'Rank' : m === 'sets' ? 'Sets' : 'Smart'}
-              </button>
-            ))}
+          <div className="segmented segmented--sort" role="group" aria-label="Sort hand">
+            <button className={sortMode === 'manual' ? 'is-on' : ''} aria-pressed={sortMode === 'manual'} onClick={() => setSort('manual')}>
+              My order
+            </button>
+            <button className={sortMode === 'suit' ? 'is-on' : ''} aria-pressed={sortMode === 'suit'} onClick={() => setSort('suit')}>
+              By suit
+            </button>
+            <button className={sortMode === 'smart' ? 'is-on' : ''} aria-pressed={sortMode === 'smart'} onClick={() => setSort('smart')}>
+              Hand shape
+            </button>
+            <button
+              className={moreSortActive ? 'is-on' : ''}
+              aria-label="More sort options"
+              aria-haspopup="dialog"
+              aria-expanded={sortMoreOpen}
+              aria-describedby={moreSortActive ? 'sort-advanced-current' : undefined}
+              onClick={() => setSortMoreOpen(true)}
+            >
+              More
+            </button>
+            {moreSortActive && (
+              <span id="sort-advanced-current" className="sr-only">
+                Current sort: {sortMode === 'rank' ? 'By number' : 'Groups first'}
+              </span>
+            )}
           </div>
         </div>
 
@@ -635,6 +657,16 @@ export function Game() {
       {fanOpen && (
         <FanSheet lines={fanLines} fan={myFan} minFan={game.minFan} onClose={() => setFanOpen(false)} />
       )}
+      {sortMoreOpen && (
+        <SortOptionsSheet
+          sortMode={sortMode}
+          onClose={() => setSortMoreOpen(false)}
+          onSelect={(next) => {
+            setSort(next);
+            setSortMoreOpen(false);
+          }}
+        />
+      )}
       {resultOpen && <ResultOverlay />}
     </div>
   );
@@ -647,6 +679,7 @@ function Hud({
   target,
   muted,
   onMute,
+  onOptions,
   onLeave,
   wind,
   wall,
@@ -655,6 +688,7 @@ function Hud({
   target: number;
   muted: boolean;
   onMute: () => void;
+  onOptions: () => void;
   onLeave: () => void;
   wind: number;
   wall: number;
@@ -674,6 +708,9 @@ function Hud({
       <span className="chip chip--ghost">{WIND_GLYPH[wind]} round</span>
       <button className="icon-btn" aria-label={muted ? 'Unmute' : 'Mute'} onClick={onMute}>
         {muted ? <IconMute /> : <IconSound />}
+      </button>
+      <button className="icon-btn" aria-label="Options" onClick={onOptions}>
+        <IconSliders />
       </button>
       <button className="icon-btn" aria-label="Leave table" onClick={onLeave}>
         <IconClose />
@@ -732,6 +769,61 @@ function LeaveDialog({
   );
 }
 
+function SortOptionsSheet({
+  sortMode,
+  onClose,
+  onSelect,
+}: {
+  sortMode: SortMode;
+  onClose: () => void;
+  onSelect: (mode: SortMode) => void;
+}) {
+  const dialog = useDialog(onClose);
+  const options: { mode: 'rank' | 'sets'; label: string; description: string }[] = [
+    { mode: 'rank', label: 'By number', description: 'Line up the same number across suits.' },
+    { mode: 'sets', label: 'Groups first', description: 'Triplets and pairs, then runs and singles.' },
+  ];
+
+  return (
+    <div
+      className="modal-scrim sort-scrim"
+      onPointerDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div className="card sort-sheet" ref={dialog} role="dialog" aria-modal="true" aria-labelledby="sort-sheet-title">
+        <div className="sort-sheet__head">
+          <div>
+            <h2 id="sort-sheet-title">More sort options</h2>
+            <p className="sort-sheet__hint">Your order is saved. Drag a tile to return to it.</p>
+          </div>
+          <button className="icon-btn" aria-label="Close sort options" onClick={onClose}>
+            <IconClose size={14} />
+          </button>
+        </div>
+        <div className="sort-sheet__options">
+          {options.map((option) => (
+            <button
+              key={option.mode}
+              className={`sort-option${sortMode === option.mode ? ' is-on' : ''}`}
+              aria-label={option.label}
+              aria-describedby={`sort-${option.mode}-description`}
+              aria-pressed={sortMode === option.mode}
+              onClick={() => onSelect(option.mode)}
+            >
+              <span className="sort-option__copy">
+                <strong>{option.label}</strong>
+                <span id={`sort-${option.mode}-description`}>{option.description}</span>
+              </span>
+              <span className="sort-option__mark" aria-hidden="true" />
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /**
  * One opponent, one card — the three of them are identical by design. Placement is the only
  * difference, and the paw reaches toward the middle of the table so the group reads as mirrored.
@@ -742,7 +834,6 @@ function OpponentCard({
   dealer,
   game,
   meta,
-  scores,
   wins,
   pose,
   callout,
@@ -753,7 +844,6 @@ function OpponentCard({
   dealer: number;
   game: NonNullable<ReturnType<typeof useStore.getState>['game']>;
   meta?: ReturnType<typeof useStore.getState>['seats'][number];
-  scores: number[];
   wins: number[];
   pose: 'rest' | 'raise' | 'tap' | 'slam';
   callout: string | null;
@@ -804,10 +894,14 @@ function OpponentCard({
         <span className="wind-disc" style={{ ['--seat' as string]: `var(--seat-${seat})` }}>
           {WIND_GLYPH[wind]}
         </span>
-        <span key={scores[seat]} className="seat__score score-pop">
-          {money(scores[seat])}
+        <span
+          key={wins[seat]}
+          /* both hooks are real: `opp__wins` is what retail-audit greps for */
+          className="seat__wins opp__wins score-pop"
+          aria-label={`${wins[seat]} of ${useStore.getState().target} hands won`}
+        >
+          {wins[seat]}/{useStore.getState().target} wins
         </span>
-        <span className="opp__wins">{wins[seat]}/{useStore.getState().target}</span>
       </span>
 
       <div className="opp__hold" aria-hidden="true">
@@ -919,7 +1013,7 @@ function FanSheet({
         ) : (
           <>
             <p className="fansheet__lead">
-              Fan {have} · worth ×{Math.pow(2, have)} today.
+              Fan {have} · every double is one fan.
             </p>
             <ul className="fanlist">
               {lines.map((l, i) => (
@@ -960,8 +1054,8 @@ function FanMeter({ value, onOpen }: { value: number; onOpen: () => void }) {
       type="button"
       className="fanmeter"
       onClick={onOpen}
-      aria-label={`Fan ${have}, worth x${Math.pow(2, have)} — show what this hand is scoring`}
-      title="Doubles this shape is heading for — tap to see which"
+      aria-label={`Fan ${have} — show what this hand is worth`}
+      title="Fan this shape is heading for — tap to see which"
     >
       <span style={{ letterSpacing: '.14em' }}>fan</span>
       <span className="fanmeter__pips">
@@ -970,7 +1064,7 @@ function FanMeter({ value, onOpen }: { value: number; onOpen: () => void }) {
         ))}
       </span>
       <span style={{ color: have > 0 ? 'var(--gold)' : undefined, fontVariantNumeric: 'tabular-nums' }}>
-        ×{Math.pow(2, have)}
+        {have}
       </span>
     </button>
   );

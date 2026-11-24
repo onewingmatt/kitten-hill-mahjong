@@ -139,9 +139,26 @@ export function CatFace({ cat, live = true, className, look = 0 }: FaceProps) {
   const cheek = 1 + (w - 1) * 0.9;
   const inner = darken(cat.fur, 0.06);
   const dark = cat.patternColor;
-  const muzzle = cat.pattern === 'tuxedo' || cat.pattern === 'bicolour' ? '#fbf7ef' : lighten(cat.fur, 0.42);
 
   const hair = cat.hair ?? 'none';
+  /**
+   * Fixed lightening amounts turn black fur into grey fur: a 22% highlight put
+   * the lit side of a #2f2a27 skull at rgb(93,89,86), and the 42% muzzle patch
+   * painted a pale grey mask across the lower face. Scale every lift by the
+   * coat's own luminance instead, so dark cats stay black and light cats are
+   * untouched.
+   */
+  const furLum = (() => {
+    const hex = cat.fur.replace('#', '');
+    if (hex.length !== 6) return 0.5;
+    const n = parseInt(hex, 16);
+    return (0.2126 * ((n >> 16) & 255) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255)) / 255;
+  })();
+  const coatLift = Math.min(1, Math.max(0.3, furLum / 0.45));
+  const furHighlight = 0.22 * coatLift;
+  /** A black cat's muzzle is a shade lighter than its fur, not a grey mask. */
+  const muzzle =
+    cat.pattern === 'tuxedo' || cat.pattern === 'bicolour' ? '#fbf7ef' : lighten(cat.fur, 0.42 * coatLift);
   /** Fur length, not a wig: fluff is drawn in the coat's own colours. */
   const fluffFill = lighten(cat.fur, 0.13);
   const fluffStroke = darken(cat.fur, 0.24);
@@ -253,7 +270,7 @@ export function CatFace({ cat, live = true, className, look = 0 }: FaceProps) {
           <ellipse cx="60" cy="66" rx={rx} ry={ry} />
         </clipPath>
         <radialGradient id={`fur-${id}`} cx="42%" cy="34%" r="72%">
-          <stop offset="0%" stopColor={lighten(cat.fur, 0.22)} />
+          <stop offset="0%" stopColor={lighten(cat.fur, furHighlight)} />
           <stop offset="62%" stopColor={cat.fur} />
           <stop offset="100%" stopColor={darken(cat.fur, 0.16)} />
         </radialGradient>

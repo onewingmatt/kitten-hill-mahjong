@@ -30,6 +30,65 @@ const PROFILE = JSON.stringify({
 });
 
 const browser = await chromium.launch({ executablePath: '/usr/bin/google-chrome-stable', args: ['--no-sandbox'] });
+
+/* 0. the empty-profile menu is understandable and fits a short phone */
+{
+  const ctx = await browser.newContext({ viewport: { width: 360, height: 640 }, deviceScaleFactor: 1, isMobile: true, hasTouch: true });
+  const page = await ctx.newPage();
+  const errs = []; page.on('pageerror', (e) => errs.push(e.message));
+  await page.goto(process.argv[2] ?? 'http://localhost:4180/', { waitUntil: 'networkidle' });
+  await page.evaluate(() => { localStorage.clear(); localStorage.setItem('khm.coach.v1', 'done'); });
+  await page.reload({ waitUntil: 'networkidle' });
+
+  const layout = await page.evaluate(() => {
+    const screen = document.querySelector('.screen--menu');
+    const split = [...(screen?.querySelectorAll('.card') ?? [])].filter((e) => {
+      const r = e.getBoundingClientRect();
+      return r.top < innerHeight && r.bottom > innerHeight;
+    });
+    return { overflow: screen ? screen.scrollHeight - screen.clientHeight : Infinity, split: split.length };
+  });
+  check('menu:empty-fits-360x640', layout.overflow <= 1 && layout.split === 0, `screen overflow ${layout.overflow}px, split cards ${layout.split}`);
+
+  const smallCreateCount = await page.getByRole('button', { name: 'Create', exact: true }).count();
+  const create = page.getByRole('button', { name: 'Create a cat', exact: true });
+  const createReady = (await create.count()) === 1 && !(await create.isDisabled());
+  if (createReady) await create.click();
+  await page.waitForTimeout(100);
+  const creatorOpen = await page.evaluate(() => !!document.querySelector('.screen--creator'));
+  check('menu:create-action-opens-creator', createReady && creatorOpen, `enabled ${createReady}, creator ${creatorOpen}`);
+  check('menu:no-duplicate-create-action', smallCreateCount === 0, `${smallCreateCount} secondary Create button(s)`);
+  if (creatorOpen) {
+    const coatLabel = page.getByText('Coat colour', { exact: true });
+    check('creator:coat-swatches-labelled', await coatLabel.count() === 1 && await coatLabel.isVisible(), 'visible label above coat swatches');
+    await page.getByRole('button', { name: '‹ Back', exact: true }).click();
+    await page.waitForTimeout(100);
+  }
+
+  const online = page.getByRole('button', { name: 'Play online · rooms', exact: true });
+  const onlineCount = await online.count();
+  const onlineDisabled = onlineCount === 1 && await online.isDisabled();
+  const note = page.getByText('Create a cat before playing online.', { exact: true });
+  const noteVisible = await note.isVisible();
+  const onlineExplained = onlineDisabled && noteVisible;
+  check('menu:online-prerequisite-visible', onlineExplained, JSON.stringify({ onlineCount, onlineDisabled, noteVisible }));
+
+  const rivalToggle = page.getByRole('button', { name: 'Face a cat', exact: true });
+  const collapsed = (await rivalToggle.count()) === 1
+    && !(await page.getByRole('textbox', { name: 'Cat code' }).count());
+  if (collapsed) {
+    await rivalToggle.click();
+    await page.waitForTimeout(250);
+  }
+  const addBox = await page.getByRole('button', { name: 'Add', exact: true }).boundingBox().catch(() => null);
+  const formUsable = await page.getByRole('textbox', { name: 'Cat code' }).count() === 1
+    && await page.getByRole('textbox', { name: 'Cat name' }).count() === 1
+    && !!addBox && addBox.y >= 0 && addBox.y + addBox.height <= 640;
+  check('menu:rival-form-opens-and-add-is-visible', collapsed && formUsable, JSON.stringify({ collapsed, addBox }));
+  check('menu:no-errors', errs.length === 0, errs.slice(0, 2).join(' | '));
+  await ctx.close();
+}
+
 const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 1, isMobile: true, hasTouch: true });
 const page = await ctx.newPage();
 const errs = []; page.on('pageerror', (e) => errs.push(e.message));
@@ -70,30 +129,69 @@ await page.evaluate(() => {
 await page.waitForTimeout(300);
 
 const order = () => page.evaluate(() => [...document.querySelectorAll('.dock__hand .tile')].map((t) => t.getAttribute('aria-label')));
-// the order the deal left the player with, before any lens is applied
-const mineOrder = await order();
-const clickSort = async (name) => {
-  await page.evaluate((n) => {
-    const b = Array.from(document.querySelectorAll('.segmented button')).find((x) => x.textContent.trim() === n);
-    b?.click();
-  }, name);
+const clickMainSort = async (name) => {
+  await page.getByRole('button', { name, exact: true }).click();
   await page.waitForTimeout(200);
 };
+const openMoreSorts = async () => {
+  await page.getByRole('button', { name: 'More sort options', exact: true }).click();
+  await page.getByRole('dialog', { name: 'More sort options' }).waitFor({ state: 'visible' });
+};
+// the order the deal left the player with, before any lens is applied
+const mineOrder = await order();
+const manualPressed = await page.getByRole('button', { name: 'My order', exact: true }).getAttribute('aria-pressed');
+check('sort:my-order-is-clear-default', manualPressed === 'true', `aria-pressed ${manualPressed}`);
 
-await clickSort('Rank');
+await openMoreSorts();
+const menuHasDescriptions = await page.getByText('Line up the same number across suits.', { exact: true }).count() === 1
+  && await page.getByText('Triplets and pairs, then runs and singles.', { exact: true }).count() === 1;
+check('sort:more-menu-explains-advanced-options', menuHasDescriptions, `descriptions visible ${menuHasDescriptions}`);
+await page.getByRole('button', { name: 'By number', exact: true }).click();
 const byRank = await order();
-await clickSort('Suit');
+
+await clickMainSort('By suit');
 const bySuit = await order();
-await clickSort('Sets');
+await clickMainSort('Hand shape');
+const bySmart = await order();
+const shapePressed = await page.getByRole('button', { name: 'Hand shape', exact: true }).getAttribute('aria-pressed');
+
+await openMoreSorts();
+await page.getByRole('button', { name: 'Groups first', exact: true }).click();
 const bySets = await order();
-await clickSort('Mine');
+await openMoreSorts();
+const groupsPressed = await page.getByRole('button', { name: 'Groups first', exact: true }).getAttribute('aria-pressed');
+await page.keyboard.press('Escape');
+await page.getByRole('dialog', { name: 'More sort options' }).waitFor({ state: 'detached' });
+const escapeClosed = await page.getByRole('dialog', { name: 'More sort options' }).count() === 0;
+await page.setViewportSize({ width: 360, height: 640 });
+await openMoreSorts();
+const shortSheet = await page.evaluate(() => {
+  const panel = document.querySelector('.sort-sheet');
+  const r = panel?.getBoundingClientRect();
+  const options = [...(panel?.querySelectorAll('.sort-option') ?? [])].map((e) => e.getBoundingClientRect());
+  return {
+    fits: !!r && r.top >= 0 && r.bottom <= innerHeight && panel.scrollHeight <= panel.clientHeight + 1,
+    targets: options.map((b) => ({ w: b.width, h: b.height })),
+  };
+});
+const shortSheetFits = shortSheet.fits && shortSheet.targets.length === 2 && shortSheet.targets.every((b) => b.w >= 44 && b.h >= 44);
+await page.keyboard.press('Escape');
+await page.getByRole('dialog', { name: 'More sort options' }).waitFor({ state: 'detached' });
+await page.setViewportSize({ width: 390, height: 844 });
+await clickMainSort('My order');
 const byMine = await order();
 check('sort:rank-orders-by-rank', JSON.stringify(byRank) !== JSON.stringify(byMine), byRank.join(','));
 check('sort:suit-groups-suits', JSON.stringify(bySuit) !== JSON.stringify(byRank), bySuit.join(','));
-check('sort:sets-pulls-sets-forward', JSON.stringify(bySets) !== JSON.stringify(bySuit), bySets.join(','));
-check('sort:mine-restores-own-order', JSON.stringify(byMine) === JSON.stringify(mineOrder), `mine ${byMine.join(',')}`);
+check('sort:groups-option-works', JSON.stringify(bySets) !== JSON.stringify(bySuit), bySets.join(','));
+check('sort:groups-selection-announced', groupsPressed === 'true', `aria-pressed ${groupsPressed}`);
+check('sort:hand-shape-groups-pairs', JSON.stringify(bySmart) !== JSON.stringify(bySuit), bySmart.join(','));
+check('sort:hand-shape-selection-announced', shapePressed === 'true', `aria-pressed ${shapePressed}`);
+check('sort:escape-closes-more-menu', escapeClosed, `closed ${escapeClosed}`);
+check('sort:more-menu-fits-360x640', shortSheetFits, JSON.stringify(shortSheet));
+check('sort:my-order-restores-own-order', JSON.stringify(byMine) === JSON.stringify(mineOrder), `my order ${byMine.join(',')}`);
 
-/* drag the first tile to the far right and check the order changed */
+/* drag an auto-sorted tile: the gesture must return the hand to its own order */
+await clickMainSort('Hand shape');
 const before = await order();
 const box = await page.locator('.dock__hand .tile').first().boundingBox();
 const last = await page.locator('.dock__hand .tile').last().boundingBox();
@@ -103,7 +201,9 @@ await page.mouse.move(last.x + last.width - 4, last.y + last.height / 2, { steps
 await page.mouse.up();
 await page.waitForTimeout(300);
 const after = await order();
+const manualAfterDrag = await page.getByRole('button', { name: 'My order', exact: true }).getAttribute('aria-pressed');
 check('drag:reorders-by-hand', JSON.stringify(after) !== JSON.stringify(before) && after.length === before.length, `${before[0]} moved → ${after.join(',')}`);
+check('drag:returns-to-my-order', manualAfterDrag === 'true', `My order aria-pressed ${manualAfterDrag}`);
 
 /* the player sheet explains a seat */
 await page.evaluate(() => { const el = document.querySelector('.dock__you'); el?.click(); });

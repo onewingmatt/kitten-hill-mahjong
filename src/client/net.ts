@@ -4,7 +4,8 @@
  * one shared clock possible across four phones.
  */
 import { io, type Socket } from 'socket.io-client';
-import { pruneKeep, useStore, type SeatMeta } from './store';
+import { commitOnlineStat, commitStats, dropOnlineStat, noteHandLost, pruneKeep, useStore, type SeatMeta } from './store';
+import { recordHand } from './stats';
 import { reconcileOrder } from './sort';
 import type { GameAction, GameState, Personality } from '../engine/types';
 import { defaultCat, type CatAppearance } from './cat';
@@ -71,6 +72,13 @@ function conn(): Socket {
       }
     });
     socket.on('room:state', applySnapshot);
+    // the server is the only writer online: a decision is learned when it is accepted
+    socket.on('room:applied', (p: { id?: string }) => {
+      if (p?.id) commitOnlineStat(p.id);
+    });
+    socket.on('room:rejected', (p: { id?: string }) => {
+      if (p?.id) dropOnlineStat(p.id);
+    });
   }
   return socket;
 }
@@ -81,7 +89,7 @@ function applySnapshot(st: {
   target: 1 | 2 | 3;
   handNo: number;
   dealer: number;
-  scores: number[];
+
   handWins: number[];
   deadlineAt: number | null;
   you: number;
@@ -99,6 +107,17 @@ function applySnapshot(st: {
           tag: 'open',
         },
   );
+
+  // online nothing went through `act`, so the hand record is written here — once,
+  // on the snapshot that turns the table over
+  if (st.game?.phase === 'ended' && prev.game?.phase !== 'ended') {
+    const won = st.game.win?.seat === st.you;
+    const fan = st.game.win?.score?.fan ?? 0;
+    const measured = recordHand(useStore.getState().stats, { won, draw: !!st.game.drawGame, fan });
+    commitStats(measured);
+    noteHandLost(st.game.win ? st.game.win.seat !== st.you : false);
+    track('hand:end', { won, drawn: !!st.game.drawGame, fan, hands: measured.hands, online: true });
+  }
 
   const handChanged = prev.handNo !== st.handNo || !prev.game;
   const me = st.you;
@@ -120,7 +139,6 @@ function applySnapshot(st: {
     target: st.target,
     handNo: st.handNo,
     dealer: st.dealer,
-    scores: st.scores,
     handWins: st.handWins,
     deadlineAt: st.deadlineAt,
     game: st.game ?? null,
@@ -133,13 +151,16 @@ function applySnapshot(st: {
     matchOver: st.handWins.some((w) => w >= st.target),
     myOrder: nextOrder,
     keep: nextKeep,
+    // the raised tile is an index into the rack we just replaced; the server
+    // owns the hand, so a selection made against the previous one means nothing
+    selected: null,
   });
 }
 
 export const net = {
-  create(profile: Profile, target: 1 | 2 | 3): void {
-    track('room:create', { target });
-    conn().emit('room:create', { profile, target });
+  create(profile: Profile, target: 1 | 2 | 3, minFan = 0): void {
+    track('room:create', { target, minFan });
+    conn().emit('room:create', { profile, target, minFan });
   },
   join(code: string, profile: Profile): void {
     track('room:join');
@@ -157,8 +178,8 @@ export const net = {
   nextHand(): void {
     conn().emit('room:nextHand');
   },
-  action(a: GameAction): void {
-    conn().emit('room:action', a);
+  action(a: GameAction, id?: string): void {
+    conn().emit('room:action', id ? { id, action: a } : a);
   },
   leave(): void {
     writeSeat(null);
